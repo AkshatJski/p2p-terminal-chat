@@ -1,8 +1,36 @@
+# Build Outputs & Package Artifacts
 target/
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
 .kotlin
+
+# Java Compiled Class Files (Prevents loose class files in src)
+*.class
+
+# Maven shade-plugin byproducts
+dependency-reduced-pom.xml
+
+# jSerialComm native-library extraction
+Android/
+FreeBSD/
+Linux/
+OSX/
+OpenBSD/
+Solaris/
+Windows/
+
+# Stray class files extracted next to the jar
+module-info.class
+
+# Downloaded chat files
+downloads/
+
+### Secrets & App Files (Uncomment if sensitive) ###
+# config.properties
 
 ### IntelliJ IDEA ###
 .idea/
@@ -29,12 +57,10 @@ target/
 /dist/
 /nbdist/
 /.nb-gradle/
-build/
-!**/src/main/**/build/
-!**/src/test/**/build/
 
 ### VS Code ###
 .vscode/
 
-### Mac OS ###
+### Mac OS / OS Files ###
 .DS_Store
+Thumbs.db
