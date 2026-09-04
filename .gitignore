@@ -14,20 +14,21 @@ build/
 # Maven shade-plugin byproducts
 dependency-reduced-pom.xml
 
-# jSerialComm native-library extraction
-Android/
-FreeBSD/
-Linux/
-OSX/
-OpenBSD/
-Solaris/
-Windows/
-
 # Stray class files extracted next to the jar
 module-info.class
 
 # Downloaded chat files
 downloads/
+
+# Feature smoke-test harness output (class files + logs)
+tool-out/
+
+# Learning documentation (local-only, not pushed)
+learn.docs
+# Full technical deep-dive (local-only; README.md on GitHub is the short one)
+/TECHNICAL-GUIDE.md
+# Office temp files for the local docs
+~$*
 
 ### Secrets & App Files (Uncomment if sensitive) ###
 # config.properties

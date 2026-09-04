@@ -10,7 +10,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * In-process pipe transport for tests and for demoing the mesh on one machine
- * without any network or Bluetooth hardware. Uses chunked blocking queues
+ * without any network hardware. Uses chunked blocking queues
  * instead of {@code PipedStream}s so links survive the writer thread exiting.
  */
 public final class LoopbackTransport implements Transport {

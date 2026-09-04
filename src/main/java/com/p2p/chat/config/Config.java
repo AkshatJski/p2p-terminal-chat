@@ -1,7 +1,6 @@
 package com.p2p.chat.config;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -35,6 +34,15 @@ public final class Config {
     public static final String KEY_HANDSHAKE_TIMEOUT = "handshake.timeout.ms";
     public static final String KEY_MESH_TTL = "mesh.ttl";
     public static final String KEY_DOWNLOAD_DIR = "download.dir";
+    public static final String KEY_RECONNECT_ENABLED = "reconnect.enabled";
+    public static final String KEY_RECONNECT_MAX = "reconnect.max";
+    public static final String KEY_RECONNECT_BASE_MS = "reconnect.base.ms";
+    public static final String KEY_RECONNECT_MAX_MS = "reconnect.max.ms";
+    public static final String KEY_TRUST_SERVER_ENABLED = "trust.server.enabled";
+    public static final String KEY_TRUST_SERVER_PORT = "trust.server.port";
+    public static final String KEY_WEB_ENABLED = "web.enabled";
+    public static final String KEY_WEB_PORT = "web.port";
+    public static final String KEY_WEB_HTTP_PORT = "web.http.port";
 
     // Built-in defaults.
     public static final int DEFAULT_PORT = 8080;
@@ -42,6 +50,15 @@ public final class Config {
     public static final int DEFAULT_MAX_FRAME = 1 << 20; // 1 MiB
     public static final int DEFAULT_HANDSHAKE_TIMEOUT_MS = 10_000;
     public static final int DEFAULT_MESH_TTL = 8;
+    public static final boolean DEFAULT_RECONNECT_ENABLED = true;
+    public static final int DEFAULT_RECONNECT_MAX = 12;
+    public static final long DEFAULT_RECONNECT_BASE_MS = 1_000;
+    public static final long DEFAULT_RECONNECT_MAX_MS = 30_000;
+    public static final boolean DEFAULT_TRUST_SERVER_ENABLED = true;
+    public static final int DEFAULT_TRUST_SERVER_PORT = 0; // auto-pick
+    public static final boolean DEFAULT_WEB_ENABLED = true;
+    public static final int DEFAULT_WEB_PORT = 8082;
+    public static final int DEFAULT_WEB_HTTP_PORT = 8083;
 
     public static final Path DEFAULT_DIR = Path.of(System.getProperty("user.home"), ".p2p-chat");
     public static final Path DEFAULT_CONFIG_FILE = DEFAULT_DIR.resolve("config.properties");
@@ -79,8 +96,8 @@ public final class Config {
         Config c = new Config();
         c.configFile = c.findConfigFile(args);
         if (c.configFile != null && Files.isRegularFile(c.configFile)) {
-            try (InputStream in = Files.newInputStream(c.configFile)) {
-                c.props.load(in);
+            try {
+                loadProperties(c.props, Files.readAllLines(c.configFile));
                 System.out.println("[Config] Loaded " + c.configFile);
             } catch (IOException e) {
                 System.err.println("[Config] Could not read " + c.configFile + ": " + e.getMessage());
@@ -91,6 +108,30 @@ public final class Config {
         c.applyCliOverrides(args);
         instance = c;
         return c;
+    }
+
+    /**
+     * Reads simple {@code key=value} lines without the Java properties escape
+     * rules. This keeps Windows paths such as {@code C:\Users\...} intact,
+     * which {@link Properties#load} would silently mangle.
+     */
+    private static void loadProperties(java.util.Properties props, List<String> lines) {
+        for (String raw : lines) {
+            String line = raw.trim();
+            if (line.isEmpty() || line.startsWith("#") || line.startsWith("!")) {
+                continue;
+            }
+            int eq = line.indexOf('=');
+            int colon = line.indexOf(':');
+            int cut = Math.min(eq < 0 ? Integer.MAX_VALUE : eq, colon < 0 ? Integer.MAX_VALUE : colon);
+            String key = cut == Integer.MAX_VALUE ? line : line.substring(0, cut);
+            String value = cut == Integer.MAX_VALUE ? "" : line.substring(cut + 1);
+            key = key.trim();
+            if (key.isEmpty()) {
+                continue;
+            }
+            props.setProperty(key, value.trim());
+        }
     }
 
     /** The process-wide config; lazily loads the defaults if {@link #load} was not called. */
@@ -163,6 +204,51 @@ public final class Config {
         return path(KEY_DOWNLOAD_DIR, DEFAULT_DOWNLOAD_DIR);
     }
 
+    /** Whether auto-reconnect is enabled. */
+    public boolean isReconnectEnabled() {
+        return getBool(KEY_RECONNECT_ENABLED, DEFAULT_RECONNECT_ENABLED);
+    }
+
+    /** Max reconnect attempts before giving up. */
+    public int getReconnectMaxRetries() {
+        return bounded(KEY_RECONNECT_MAX, DEFAULT_RECONNECT_MAX, 1, 100);
+    }
+
+    /** Base delay between reconnect attempts in milliseconds. */
+    public long getReconnectBaseDelayMs() {
+        return getLong(KEY_RECONNECT_BASE_MS, DEFAULT_RECONNECT_BASE_MS);
+    }
+
+    /** Maximum delay cap between reconnect attempts in milliseconds. */
+    public long getReconnectMaxDelayMs() {
+        return getLong(KEY_RECONNECT_MAX_MS, DEFAULT_RECONNECT_MAX_MS);
+    }
+
+    /** Whether the HTTP trust verification server is enabled. */
+    public boolean isTrustServerEnabled() {
+        return getBool(KEY_TRUST_SERVER_ENABLED, DEFAULT_TRUST_SERVER_ENABLED);
+    }
+
+    /** Port for the HTTP trust server (0 = auto-pick a free port). */
+    public int getTrustServerPort() {
+        return bounded(KEY_TRUST_SERVER_PORT, DEFAULT_TRUST_SERVER_PORT, 0, 65535);
+    }
+
+    /** Whether the browser WebSocket chat client is enabled. */
+    public boolean isWebEnabled() {
+        return getBool(KEY_WEB_ENABLED, DEFAULT_WEB_ENABLED);
+    }
+
+    /** Port for the browser WebSocket endpoint (0 = auto-pick a free port). */
+    public int getWebPort() {
+        return bounded(KEY_WEB_PORT, DEFAULT_WEB_PORT, 0, 65535);
+    }
+
+    /** Port for the HTTP endpoint that serves the chat page (0 = auto-pick). */
+    public int getWebHttpPort() {
+        return bounded(KEY_WEB_HTTP_PORT, DEFAULT_WEB_HTTP_PORT, 0, 65535);
+    }
+
     /** The config file that was used, or the default path when none existed. */
     public Path getConfigFile() {
         return configFile;
@@ -229,6 +315,27 @@ public final class Config {
             System.err.println("[Config] Invalid value for " + key + ": " + v + " (using " + def + ")");
             return def;
         }
+    }
+
+    private long getLong(String key, long def) {
+        String v = props.getProperty(key);
+        if (v == null || v.isBlank()) {
+            return def;
+        }
+        try {
+            return Long.parseLong(v.trim());
+        } catch (NumberFormatException e) {
+            System.err.println("[Config] Invalid value for " + key + ": " + v + " (using " + def + ")");
+            return def;
+        }
+    }
+
+    private boolean getBool(String key, boolean def) {
+        String v = props.getProperty(key);
+        if (v == null || v.isBlank()) {
+            return def;
+        }
+        return v.trim().equalsIgnoreCase("true") || v.trim().equals("1");
     }
 
     private int bounded(String key, int def, int min, int max) {

@@ -33,7 +33,7 @@ import java.security.SecureRandom;
  * </ul>
  *
  * <p>The handshake is fully symmetric (no client/server role) and works over any
- * {@link Transport}: TCP, Bluetooth RFCOMM serial, or in-process pipes.
+ * {@link Transport}: TCP or in-process pipes.
  */
 public final class SecureChannel implements Closeable {
     private static final String PREFIX_KEY = "K:";
