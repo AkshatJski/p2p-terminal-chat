@@ -17,11 +17,10 @@ WiFi at all (multi-hop mesh).
 - **End-to-end encrypted** — X25519 (ECDH) key exchange, AES-256-GCM per message, HKDF-SHA256 key derivation. All cryptography is from the JDK standard library.
 - **Group rooms** — hosts relay `@MSG` to every member; `@join`, `@list`, `@users`.
 - **Rooms across networks** — `@link <host> [port]` bridges hosts; the same room name becomes one shared room (`alice@A6B5F2AC`).
-- **File sharing** — `@send <file>` delivers to everyone in the room (saved to `./downloads`).
+- **File sharing** — `@send <path>` sends any file/media by its path to everyone in the room (saved to `./downloads`).
 - **Moderation** — host `@kick`, `@ban`, `@unban`.
 - **Message history** — `@history [n]` replays recent in-room messages.
 - **Auto-reconnect** — exponential backoff (1s → 30s cap), rejoins your last room.
-- **Browser web client** — every host serves a single-page chat (`http://<host>:8083/`). Same rooms, history and moderation.
 - **Multi-hop mesh** — flooding with TTL + dedup; chat works over TCP links when there's no WiFi.
 - **Trust-on-first-use (TOFU)** — fingerprints verified out-of-band, saved, checked on every reconnect; a changed key aborts the connection.
 - **Single-file distribution** — one runnable shaded jar; copy it to other machines.
@@ -63,15 +62,6 @@ Install Tailscale on both machines (`winget install tailscale.tailscale` /
 No port forwarding or firewall holes. Other options: port forward 8080, or a
 tunnel like `ngrok tcp 8080`.
 
-### From a browser (no install)
-
-Open the URL the host prints at startup (default `http://<host-ip>:8083/`),
-pick a name, and join the same rooms as the terminal clients.
-
-> **Note:** the browser link is a plaintext gateway — it can't run the X25519/AES
-> handshake. Web traffic is **not** end-to-end encrypted; desktop traffic is.
-> Disable it with `web.enabled=false` in the config.
-
 ### Mesh mode (no WiFi)
 
 ```bash
@@ -93,15 +83,15 @@ java -jar target/java-p2p-terminal-chat-1.0-SNAPSHOT.jar com.p2p.chat.mesh.MeshM
 
 ## Configuration
 
-Ports, file locations, download folder, timeouts, and the web client are all
-tunable via command-line flags or a config file (`config.properties`).
+Ports, file locations, download folder, and the trust server are all tunable
+via command-line flags or a config file (`config.properties`).
 See [CONFIGURATION.md](CONFIGURATION.md).
 
 ## Tests
 
-A per-feature smoke harness exercises all 20 features end-to-end (crypto
+A per-feature smoke harness exercises all 17 features end-to-end (crypto
 identity, rooms, relay, colors, typing, files, trust, history, moderation,
-auto-reconnect, bridging, mesh flooding, and the web client):
+auto-reconnect, bridging, and mesh flooding):
 
 ```bash
 javac -cp target/java-p2p-terminal-chat-1.0-SNAPSHOT.jar -d tool-out tool/FeatureSmokeTest.java
@@ -110,9 +100,12 @@ java  -cp "tool-out;target/java-p2p-terminal-chat-1.0-SNAPSHOT.jar" FeatureSmoke
 
 Exit code 0 = all tests passed.
 
-## What's next
+## What's next (roadmap & ideas)
 
+- Terminal games playable inside a room
+- Sending files/media over mesh rooms
 - Persistent message history across restarts
-- Encrypted browser sessions
+- Browser web client (removed from the core; revisit only if an encrypted
+  end-to-end web session is feasible, e.g. keys fetched over a verified path)
 - Mobile/PWA wrapper
 - Promote the smoke harness to a proper JUnit suite

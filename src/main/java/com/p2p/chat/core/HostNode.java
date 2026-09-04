@@ -7,7 +7,6 @@ import com.p2p.chat.crypto.SecureChannel;
 import com.p2p.chat.protocol.Protocol;
 import com.p2p.chat.transport.SocketTransport;
 import com.p2p.chat.util.Ansi;
-import com.p2p.chat.web.WebHost;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -62,7 +61,6 @@ public final class HostNode extends Node {
 
     private ServerSocket serverSocket;
     private Thread acceptThread;
-    private WebHost webHost;
 
     public HostNode(String username, int port, Identity identity, TrustGate trustGate, Prompt prompt)
             throws IOException, GeneralSecurityException {
@@ -85,15 +83,6 @@ public final class HostNode extends Node {
         acceptThread.setDaemon(true);
         acceptThread.start();
         System.out.println(Ansi.color(Ansi.BRIGHT_GREEN, "[System] Hosting on port " + port + ". Waiting for peers..."));
-        Config cfg = Config.get();
-        if (cfg.isWebEnabled()) {
-            try {
-                webHost = new WebHost(cfg.getWebPort(), cfg.getWebHttpPort(), this);
-                webHost.start();
-            } catch (Exception e) {
-                System.out.println(Ansi.color(Ansi.YELLOW, "[Web] Web chat UI disabled: " + e.getMessage()));
-            }
-        }
     }
 
     private void acceptLoop() {
@@ -184,42 +173,6 @@ public final class HostNode extends Node {
                 peer.close();
             }
         }
-    }
-
-    /** Registers a browser peer (WebSocket) into the shared room namespace. Mirrors the
-     * {@code @NAME} handshake for terminal clients; returns null if the name is taken or banned. */
-    public Participant registerWebPeer(String name, java.util.function.Consumer<String> sink, Runnable closer) {
-        if (!Protocol.isValidUsername(name) || bannedUsers.contains(name)) {
-            return null;
-        }
-        Participant peer = new Participant(sink, closer);
-        peer.setUsername(name);
-        if (byName.putIfAbsent(name, peer) != null) {
-            return null;
-        }
-        participants.add(peer);
-        System.out.println(Ansi.color(Ansi.BRIGHT_GREEN, "[System] " + name + " connected (web UI)"));
-        broadcastAll(Protocol.command(Protocol.SYS, name + " connected"));
-        return peer;
-    }
-
-    /** Unregisters a browser peer. Idempotent: the WebSocket close and a kick/ban both call it. */
-    public void removeWebPeer(Participant peer) {
-        if (peer == null) {
-            return;
-        }
-        byName.remove(peer.username(), peer);
-        boolean wasRegistered = participants.remove(peer);
-        if (wasRegistered) {
-            leaveRoom(peer, false);
-            broadcastAll(Protocol.command(Protocol.SYS, peer.username() + " disconnected"));
-        }
-        peer.close();
-    }
-
-    /** Routes a protocol line received from a browser peer into the normal host relay. */
-    public void routeWebLine(Participant peer, String line) {
-        handlePeerLine(peer, line);
     }
 
     /**
@@ -370,6 +323,7 @@ public final class HostNode extends Node {
         list.add(participant);
         participant.setRoom(room);
         broadcast(room, participant, Protocol.command(Protocol.SYS, participant.username() + " joined room " + room));
+        participant.send(Protocol.command(Protocol.JOINED, room));
         participant.send(Protocol.command(Protocol.SYS, "You are now in room " + room));
         if (created) {
             syncLinkRooms();
@@ -436,6 +390,7 @@ public final class HostNode extends Node {
             }
             case Protocol.SYS -> System.out.println(Ansi.color(Ansi.WHITE, Protocol.display(line)));
             case Protocol.ERR -> System.out.println(Ansi.color(Ansi.RED, Protocol.display(line)));
+            case Protocol.JOINED -> { /* room already tracked; no console output needed */ }
             case Protocol.FILE_START -> {
                 if (f.length < 7) {
                     return;
@@ -920,10 +875,6 @@ public final class HostNode extends Node {
                 serverSocket.close();
             }
         } catch (IOException ignored) {
-        }
-        if (webHost != null) {
-            webHost.stop();
-            webHost = null;
         }
         for (HostLink link : links.values()) {
             link.close();

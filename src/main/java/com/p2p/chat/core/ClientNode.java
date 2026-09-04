@@ -85,6 +85,7 @@ public final class ClientNode extends Node {
                     + (f[2].isEmpty() ? "none" : f[2])));
             case Protocol.SYS -> System.out.println(Ansi.color(Ansi.WHITE, Protocol.display(line)));
             case Protocol.ERR -> System.out.println(Ansi.color(Ansi.RED, Protocol.display(line)));
+            case Protocol.JOINED -> { /* room already tracked locally; no output needed */ }
             case Protocol.FROM -> {
                 if (f.length >= 5) {
                     System.out.println("[Room " + Ansi.color(Ansi.YELLOW, f[1]) + "] "

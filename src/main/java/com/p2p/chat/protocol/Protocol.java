@@ -35,6 +35,7 @@ public final class Protocol {
     public static final String ROOM_USERS = "@ROOM_USERS"; // ROOM_USERS\0<room>\0<comma,list>
     public static final String ERR = "@ERR";          // ERR\0<text>
     public static final String SYS = "@SYS";          // SYS\0<text>
+    public static final String JOINED = "@JOINED";    // JOINED\0<room> - room the participant was moved into
 
     // Host <-> Host (bridging)
     public static final String BRIDGE = "@BRIDGE";    // BRIDGE\0<comma,rooms> - link handshake

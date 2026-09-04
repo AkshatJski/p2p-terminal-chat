@@ -40,9 +40,6 @@ public final class Config {
     public static final String KEY_RECONNECT_MAX_MS = "reconnect.max.ms";
     public static final String KEY_TRUST_SERVER_ENABLED = "trust.server.enabled";
     public static final String KEY_TRUST_SERVER_PORT = "trust.server.port";
-    public static final String KEY_WEB_ENABLED = "web.enabled";
-    public static final String KEY_WEB_PORT = "web.port";
-    public static final String KEY_WEB_HTTP_PORT = "web.http.port";
 
     // Built-in defaults.
     public static final int DEFAULT_PORT = 8080;
@@ -56,9 +53,6 @@ public final class Config {
     public static final long DEFAULT_RECONNECT_MAX_MS = 30_000;
     public static final boolean DEFAULT_TRUST_SERVER_ENABLED = true;
     public static final int DEFAULT_TRUST_SERVER_PORT = 0; // auto-pick
-    public static final boolean DEFAULT_WEB_ENABLED = true;
-    public static final int DEFAULT_WEB_PORT = 8082;
-    public static final int DEFAULT_WEB_HTTP_PORT = 8083;
 
     public static final Path DEFAULT_DIR = Path.of(System.getProperty("user.home"), ".p2p-chat");
     public static final Path DEFAULT_CONFIG_FILE = DEFAULT_DIR.resolve("config.properties");
@@ -232,21 +226,6 @@ public final class Config {
     /** Port for the HTTP trust server (0 = auto-pick a free port). */
     public int getTrustServerPort() {
         return bounded(KEY_TRUST_SERVER_PORT, DEFAULT_TRUST_SERVER_PORT, 0, 65535);
-    }
-
-    /** Whether the browser WebSocket chat client is enabled. */
-    public boolean isWebEnabled() {
-        return getBool(KEY_WEB_ENABLED, DEFAULT_WEB_ENABLED);
-    }
-
-    /** Port for the browser WebSocket endpoint (0 = auto-pick a free port). */
-    public int getWebPort() {
-        return bounded(KEY_WEB_PORT, DEFAULT_WEB_PORT, 0, 65535);
-    }
-
-    /** Port for the HTTP endpoint that serves the chat page (0 = auto-pick). */
-    public int getWebHttpPort() {
-        return bounded(KEY_WEB_HTTP_PORT, DEFAULT_WEB_HTTP_PORT, 0, 65535);
     }
 
     /** The config file that was used, or the default path when none existed. */

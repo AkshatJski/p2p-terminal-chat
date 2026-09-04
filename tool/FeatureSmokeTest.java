@@ -30,8 +30,6 @@ import java.util.Base64;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
-import org.java_websocket.client.WebSocketClient;
-import org.java_websocket.handshake.ServerHandshake;
 
 /**
  * Per-feature smoke harness. Compile against the shaded jar and run:
@@ -249,54 +247,6 @@ public class FeatureSmokeTest {
         }
     }
 
-    // ------------------------------------------------------------------
-    // Browser WebSocket client
-    // ------------------------------------------------------------------
-
-    static final class WebPeer extends WebSocketClient {
-        final CopyOnWriteArrayList<String> rx = new CopyOnWriteArrayList<>();
-        final AtomicInteger idx = new AtomicInteger();
-
-        WebPeer(int wsPort) throws Exception {
-            super(new URI("ws://localhost:" + wsPort + "/ws"));
-        }
-
-        @Override
-        public void onOpen(ServerHandshake h) {
-            rx.add("OPEN");
-        }
-
-        @Override
-        public void onMessage(String m) {
-            rx.add(m);
-        }
-
-        @Override
-        public void onClose(int code, String reason, boolean remote) {
-            rx.add("CLOSE");
-        }
-
-        @Override
-        public void onError(Exception e) {
-        }
-
-        String await(Predicate<String> p, long ms) throws InterruptedException {
-            long end = System.currentTimeMillis() + ms;
-            while (System.currentTimeMillis() < end) {
-                int i = idx.get();
-                if (i < rx.size() && idx.compareAndSet(i, i + 1)) {
-                    String l = rx.get(i);
-                    if (p.test(l)) {
-                        return l;
-                    }
-                } else {
-                    Thread.sleep(15);
-                }
-            }
-            return null;
-        }
-    }
-
     private static final Predicate<String> FROM_CONTAINS(String text) {
         return l -> l.startsWith("@FROM") && l.contains(text);
     }
@@ -323,9 +273,6 @@ public class FeatureSmokeTest {
         feature("15 Auto-reconnect after kick (send + receive)", FeatureSmokeTest::f15Reconnect);
         feature("16 Host-to-host bridging (@link)", FeatureSmokeTest::f16Bridge);
         feature("17 Mesh flooding (3 nodes, TTL + dedup)", FeatureSmokeTest::f17Mesh);
-        feature("18 Web client: page served + WS connect", FeatureSmokeTest::f18WebBasic);
-        feature("19 Web <-> terminal interop + shared history", FeatureSmokeTest::f19WebInterop);
-        feature("20 Moderation: kick a web user", FeatureSmokeTest::f20WebKick);
 
         System.out.println("\n===== SUMMARY =====");
         System.out.println("PASSED: " + passed + "  FAILED: " + failed);
@@ -384,7 +331,7 @@ public class FeatureSmokeTest {
 
     private static void f03Connect() throws Exception {
         Path d = dir();
-        configure(d, "web.enabled=false", "trust.server.enabled=false");
+        configure(d, "trust.server.enabled=false");
         int p = port();
         HostNode host = new HostNode("host", p, identity(d, "host"), new TrustGate(trust(d)), YES);
         host.start();
@@ -408,7 +355,7 @@ public class FeatureSmokeTest {
 
     private static void f04Tofu() throws Exception {
         Path d = dir();
-        configure(d, "web.enabled=false", "trust.server.enabled=false");
+        configure(d, "trust.server.enabled=false");
         int p = port();
         TrustStore store = trust(d);
         HostNode host = new HostNode("host", p, identity(d, "host"), new TrustGate(store), YES);
@@ -440,7 +387,7 @@ public class FeatureSmokeTest {
 
     private static void f05Mismatch() throws Exception {
         Path d = dir();
-        configure(d, "web.enabled=false", "trust.server.enabled=false");
+        configure(d, "trust.server.enabled=false");
         int p = port();
         TrustStore store = trust(d);
         HostNode host = new HostNode("host", p, identity(d, "host"), new TrustGate(store), YES);
@@ -467,7 +414,7 @@ public class FeatureSmokeTest {
 
     private static void f06Rooms() throws Exception {
         Path d = dir();
-        configure(d, "web.enabled=false", "trust.server.enabled=false");
+        configure(d, "trust.server.enabled=false");
         int p = port();
         HostNode host = new HostNode("host", p, identity(d, "host"), new TrustGate(trust(d)), YES);
         host.start();
@@ -503,7 +450,7 @@ public class FeatureSmokeTest {
 
     private static void f07Relay() throws Exception {
         Path d = dir();
-        configure(d, "web.enabled=false", "trust.server.enabled=false");
+        configure(d, "trust.server.enabled=false");
         int p = port();
         HostNode host = new HostNode("host", p, identity(d, "host"), new TrustGate(trust(d)), YES);
         host.start();
@@ -535,7 +482,7 @@ public class FeatureSmokeTest {
 
     private static void f09Typing() throws Exception {
         Path d = dir();
-        configure(d, "web.enabled=false", "trust.server.enabled=false");
+        configure(d, "trust.server.enabled=false");
         int p = port();
         HostNode host = new HostNode("host", p, identity(d, "host"), new TrustGate(trust(d)), YES);
         host.start();
@@ -560,7 +507,7 @@ public class FeatureSmokeTest {
     private static void f10Files() throws Exception {
         Path d = dir();
         Path dl = d.resolve("downloads");
-        configure(d, "web.enabled=false", "trust.server.enabled=false", "download.dir=" + dl);
+        configure(d, "trust.server.enabled=false", "download.dir=" + dl);
         int p = port();
         HostNode host = new HostNode("host", p, identity(d, "host"), new TrustGate(trust(d)), YES);
         host.start();
@@ -636,7 +583,7 @@ public class FeatureSmokeTest {
 
     private static void f12History() throws Exception {
         Path d = dir();
-        configure(d, "web.enabled=false", "trust.server.enabled=false");
+        configure(d, "trust.server.enabled=false");
         int p = port();
         HostNode host = new HostNode("host", p, identity(d, "host"), new TrustGate(trust(d)), YES);
         host.start();
@@ -681,7 +628,7 @@ public class FeatureSmokeTest {
 
     private static void f13Kick() throws Exception {
         Path d = dir();
-        configure(d, "web.enabled=false", "trust.server.enabled=false");
+        configure(d, "trust.server.enabled=false");
         int p = port();
         HostNode host = new HostNode("host", p, identity(d, "host"), new TrustGate(trust(d)), YES);
         host.start();
@@ -712,7 +659,7 @@ public class FeatureSmokeTest {
 
     private static void f14Ban() throws Exception {
         Path d = dir();
-        configure(d, "web.enabled=false", "trust.server.enabled=false");
+        configure(d, "trust.server.enabled=false");
         int p = port();
         HostNode host = new HostNode("host", p, identity(d, "host"), new TrustGate(trust(d)), YES);
         host.start();
@@ -742,7 +689,7 @@ public class FeatureSmokeTest {
 
     private static void f15Reconnect() throws Exception {
         Path d = dir();
-        configure(d, "web.enabled=false", "trust.server.enabled=false",
+        configure(d, "trust.server.enabled=false",
                 "reconnect.enabled=true", "reconnect.max=5", "reconnect.base.ms=50", "reconnect.max.ms=200");
         int p = port();
         TrustStore store = trust(d);
@@ -785,7 +732,7 @@ public class FeatureSmokeTest {
 
     private static void f16Bridge() throws Exception {
         Path d = dir();
-        configure(d, "web.enabled=false", "trust.server.enabled=false");
+        configure(d, "trust.server.enabled=false");
         int pa = port();
         int pb = port();
         TrustStore storeA = trust(d);
@@ -829,7 +776,7 @@ public class FeatureSmokeTest {
 
     private static void f17Mesh() throws Exception {
         Path d = dir();
-        configure(d, "web.enabled=false", "trust.server.enabled=false", "mesh.ttl=8");
+        configure(d, "trust.server.enabled=false", "mesh.ttl=8");
         int p2 = port();
         MeshNode n1 = new MeshNode("n1", identity(d, "n1"), new TrustGate(trust(d)));
         MeshNode n2 = new MeshNode("n2", identity(d, "n2"), new TrustGate(trust(d)));
@@ -858,117 +805,5 @@ public class FeatureSmokeTest {
         n1.close();
         n2.close();
         n3.close();
-    }
-
-    // 18 -----------------------------------------------------------------
-
-    private static void f18WebBasic() throws Exception {
-        Path d = dir();
-        int ws = port();
-        int http = port();
-        configure(d, "web.enabled=true", "web.port=" + ws, "web.http.port=" + http,
-                "trust.server.enabled=false");
-        int p = port();
-        HostNode host = new HostNode("host", p, identity(d, "host"), new TrustGate(trust(d)), YES);
-        host.start();
-        try {
-            HttpClient hc = HttpClient.newHttpClient();
-            String page = hc.send(HttpRequest.newBuilder(URI.create("http://localhost:" + http + "/")).GET().build(),
-                    BodyHandlers.ofString()).body();
-            check(page.contains("P2P Chat"), "chat page served");
-            check(!page.contains("__WS_PORT__") && page.contains(String.valueOf(ws)),
-                    "page injects ws port " + ws);
-
-            WebPeer w = new WebPeer(ws);
-            w.connect();
-            check(w.await(l -> l.equals("OPEN"), 5000) != null, "browser ws opens");
-            w.send("@NAME" + Protocol.SEP + "wally");
-            check(w.await(l -> l.startsWith("@SYS") && l.contains("Connected as wally"), 3000) != null,
-                    "ws registration accepted");
-            w.close();
-        } finally {
-            host.close();
-        }
-    }
-
-    // 19 -----------------------------------------------------------------
-
-    private static void f19WebInterop() throws Exception {
-        Path d = dir();
-        int ws = port();
-        int http = port();
-        configure(d, "web.enabled=true", "web.port=" + ws, "web.http.port=" + http,
-                "trust.server.enabled=false", "reconnect.enabled=false");
-        int p = port();
-        TrustStore store = trust(d);
-        HostNode host = new HostNode("host", p, identity(d, "host"), new TrustGate(store), YES);
-        host.start();
-        try {
-            ClientNode bob = new ClientNode("bob", "localhost", p, identity(d, "bob"), new TrustGate(store), YES);
-            bob.start();
-            Thread.sleep(300);
-            bob.handleUserInput("@join general");
-            Thread.sleep(200);
-
-            WebPeer alice = new WebPeer(ws);
-            alice.connect();
-            check(alice.await(l -> l.equals("OPEN"), 5000) != null, "web alice opens");
-            alice.send("@NAME" + Protocol.SEP + "alice");
-            alice.await(l -> l.startsWith("@SYS"), 3000);
-            alice.send("@JOIN" + Protocol.SEP + "general");
-            alice.await(l -> l.startsWith("@SYS") && l.contains("room general"), 3000);
-
-            // terminal -> web
-            bob.handleUserInput("hello from terminal");
-            check(alice.await(FROM_CONTAINS("hello from terminal"), 4000) != null,
-                    "web client receives terminal message");
-
-            // web -> terminal
-            Capture cap = new Capture();
-            alice.send("@MSG" + Protocol.SEP + "general" + Protocol.SEP + "hello from web");
-            check(cap.waitContains("hello from web", 4000), "terminal prints web message");
-            cap.close();
-
-            // shared history
-            Capture cap2 = new Capture();
-            bob.handleUserInput("@history 20");
-            boolean hist = cap2.waitContains("hello from web", 3000)
-                    && cap2.waitContains("hello from terminal", 3000);
-            cap2.close();
-            check(hist, "terminal history shows both terminal and web messages");
-
-            bob.close();
-            alice.close();
-        } finally {
-            host.close();
-        }
-    }
-
-    // 20 -----------------------------------------------------------------
-
-    private static void f20WebKick() throws Exception {
-        Path d = dir();
-        int ws = port();
-        int http = port();
-        configure(d, "web.enabled=true", "web.port=" + ws, "web.http.port=" + http,
-                "trust.server.enabled=false", "reconnect.enabled=false");
-        int p = port();
-        HostNode host = new HostNode("host", p, identity(d, "host"), new TrustGate(trust(d)), YES);
-        host.start();
-        try {
-            WebPeer alice = new WebPeer(ws);
-            alice.connect();
-            check(alice.await(l -> l.equals("OPEN"), 5000) != null, "web alice opens");
-            alice.send("@NAME" + Protocol.SEP + "alice");
-            alice.await(l -> l.startsWith("@SYS"), 3000);
-
-            host.handleUserInput("@kick alice");
-            check(alice.await(l -> l.startsWith("@ERR") && l.contains("kicked"), 4000) != null,
-                    "web user gets @ERR on kick");
-            check(alice.await(l -> l.equals("CLOSE"), 4000) != null, "web connection closed after kick");
-            alice.close();
-        } finally {
-            host.close();
-        }
     }
 }
