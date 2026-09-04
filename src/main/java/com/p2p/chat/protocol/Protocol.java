@@ -40,6 +40,21 @@ public final class Protocol {
     public static final String BRIDGE = "@BRIDGE";    // BRIDGE\0<comma,rooms> - link handshake
     public static final String BRIDGE_MSG = "@BRIDGE_MSG"; // BRIDGE_MSG\0<rid>\0<inner protocol line>
 
+    // Typing indicator
+    public static final String TYPING = "@TYPING";           // TYPING\0<room> — user started typing
+    public static final String TYPING_STOP = "@TYPING_STOP"; // TYPING_STOP\0<room> — user stopped typing
+
+    // Host moderation
+    public static final String KICK = "@KICK";   // KICK\0<target-username> — disconnect a user
+    public static final String BAN = "@BAN";     // BAN\0<target-username> — kick + prevent rejoining
+    public static final String UNBAN = "@UNBAN"; // UNBAN\0<target-username> — remove a ban
+    public static final String BANNED = "@BANNED"; // BANNED — user was refused entry (host -> client)
+
+    // Message history
+    public static final String HISTORY = "@HISTORY";       // HISTORY\0<room>\0<count> — request last N
+    public static final String HIST_ENTRY = "@HIST_ENTRY"; // HIST_ENTRY\0<user>\0<text> — a history message
+    public static final String HIST_END = "@HIST_END";     // HIST_END — end of history
+
     public static final int MAX_USERNAME_LEN = 32;
     public static final int MAX_ROOM_LEN = 64;
 
@@ -87,6 +102,10 @@ public final class Protocol {
                     : line;
             case FILE_ABORT -> "[File] Transfer aborted"
                     + (f.length > 3 && !f[3].isEmpty() ? ": " + f[3] : "");
+            case TYPING -> f.length >= 3
+                    ? "[*] " + f[2] + " is typing..."
+                    : "";
+            case TYPING_STOP -> ""; // silently consumed
             default -> line;
         };
     }

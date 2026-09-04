@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * </ul>
  */
 public abstract class Node implements AutoCloseable {
-    protected final SecureChannel channel;
+    protected volatile SecureChannel channel;
     protected final String username;
     protected volatile boolean running = true;
     protected volatile boolean userClosed = false;
@@ -52,9 +52,11 @@ public abstract class Node implements AutoCloseable {
     }
 
     private void readLoop() {
+        // Capture the channel reference locally — it may be reassigned during reconnect.
+        SecureChannel ch = this.channel;
         try {
-            while (running) {
-                String message = channel.receive();
+            while (running && ch != null) {
+                String message = ch.receive();
                 if (message == null) {
                     break;
                 }

@@ -10,10 +10,8 @@ import java.io.OutputStream;
  * protocol over. Anything that yields two connected streams can be a transport:
  * <ul>
  *   <li>{@link SocketTransport} - TCP/IP (LAN, WAN)</li>
- *   <li>{@link SerialTransport} - Bluetooth RFCOMM exposed as a serial/COM port</li>
  *   <li>{@link LoopbackTransport} - in-process pipes for tests</li>
  * </ul>
- * This is the seam that lets the mesh run over Bluetooth when WiFi is gone.
  */
 public interface Transport extends Closeable {
     InputStream input() throws IOException;

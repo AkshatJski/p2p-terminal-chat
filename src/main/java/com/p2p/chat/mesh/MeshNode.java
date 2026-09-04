@@ -6,7 +6,6 @@ import com.p2p.chat.crypto.SecureChannel;
 import com.p2p.chat.core.Prompt;
 import com.p2p.chat.core.TrustGate;
 import com.p2p.chat.protocol.Protocol;
-import com.p2p.chat.transport.SerialTransport;
 import com.p2p.chat.transport.SocketTransport;
 import com.p2p.chat.transport.Transport;
 import java.io.Closeable;
@@ -23,9 +22,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * <p>Unlike the star-shaped host/room model, a mesh connects every node to any
  * number of neighbors and routes messages hop by hop (flooding with a TTL and
- * message-id deduplication). It is transport-agnostic, so it runs over TCP,
- * over Bluetooth RFCOMM serial, or over in-process pipes for testing - which is
- * exactly what lets chat keep working when there is no WiFi.
+ * message-id deduplication). It is transport-agnostic, so it runs over TCP or
+ * over in-process pipes for testing.
  *
  * <p>Rooms act as broadcast filters: a message floods the whole mesh and every
  * node currently in that room renders it; everyone else forwards it silently.
@@ -92,12 +90,7 @@ public final class MeshNode implements Closeable {
         return connectTransport(new SocketTransport(new Socket(host, port)), endpoint, prompt);
     }
 
-    /** Opens a Bluetooth RFCOMM / serial device as a link. */
-    public boolean connectSerial(String portName, Prompt prompt) throws IOException {
-        return connectTransport(new SerialTransport(portName), "serial:" + portName, prompt);
-    }
-
-    /** Attaches an already-open transport (used by tests and by serial acceptors). */
+    /** Attaches an already-open transport (used by tests). */
     public boolean connectTransport(Transport transport, String endpoint, Prompt prompt) throws IOException {
         SecureChannel channel = new SecureChannel(transport, identity);
         if (!trustGate.verifyClient(channel, endpoint, prompt)) {

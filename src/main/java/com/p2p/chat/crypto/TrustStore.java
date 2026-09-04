@@ -59,11 +59,36 @@ public final class TrustStore {
         return known != null && known.equalsIgnoreCase(fingerprint);
     }
 
+    /** True when this fingerprint was ever recorded (under any endpoint). */
+    public boolean hasFingerprint(String fingerprint) {
+        if (fingerprint == null) {
+            return false;
+        }
+        for (String known : byEndpoint.values()) {
+            if (fingerprint.equalsIgnoreCase(known)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public void remember(String endpoint, String fingerprint) throws IOException {
         byEndpoint.put(endpoint, fingerprint);
         Files.createDirectories(file.getParent());
         StringBuilder sb = new StringBuilder();
         byEndpoint.forEach((k, v) -> sb.append(k).append(' ').append(v).append('\n'));
         Files.writeString(file, sb.toString(), StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Records a peer identity keyed by its fingerprint itself, so that inbound
+     * peers sharing one address (loopback, NAT) do not overwrite each other.
+     */
+    public void rememberFingerprint(String fingerprint) throws IOException {
+        remember(prefix(fingerprint), fingerprint);
+    }
+
+    private static String prefix(String fingerprint) {
+        return "fp:" + fingerprint;
     }
 }

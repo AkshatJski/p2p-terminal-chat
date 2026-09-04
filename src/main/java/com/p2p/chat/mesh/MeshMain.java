@@ -9,14 +9,13 @@ import java.util.Scanner;
 
 /**
  * Terminal entry point for the mesh mode - chat that keeps working without
- * WiFi (Bluetooth RFCOMM, or just a mesh of TCP links). Links can be added
- * after startup by running this with a peer spec argument, or interactively.
+ * WiFi (a mesh of TCP links). Links can be added after startup by running
+ * this with a peer spec argument, or interactively.
  *
  * <p>Usage:
  * <pre>
  *   java -cp app.jar com.p2p.chat.mesh.MeshMain                     // interactive
  *   java -cp app.jar com.p2p.chat.mesh.MeshMain tcp:1.2.3.4:8081    // dial on start
- *   java -cp app.jar com.p2p.chat.mesh.MeshMain serial:/dev/rfcomm0 // bluetooth
  *   java -cp app.jar com.p2p.chat.mesh.MeshMain --port 9090 tcp:1.2.3.4:9090
  * </pre>
  */
@@ -52,7 +51,7 @@ public class MeshMain {
 
             // Then let the user add links interactively.
             while (true) {
-                System.out.print("Add a peer link? [tcp:host:port | serial:port | skip]: ");
+                System.out.print("Add a peer link? [tcp:host:port | skip]: ");
                 if (!in.hasNextLine()) {
                     break;
                 }
@@ -79,7 +78,7 @@ public class MeshMain {
                 node.handleUserInput(line);
             }
         } catch (Exception e) {
-            System.err.println("[Error] " + e.getMessage());
+            System.err.println("[Error] " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
         } finally {
             System.out.println("[Mesh] Bye.");
         }
@@ -88,9 +87,6 @@ public class MeshMain {
     private static boolean dial(MeshNode node, String spec, Prompt prompt) {
         try {
             String s = spec.trim();
-            if (s.startsWith("serial:")) {
-                return node.connectSerial(s.substring("serial:".length()), prompt);
-            }
             if (s.startsWith("tcp:")) {
                 s = s.substring("tcp:".length());
             }

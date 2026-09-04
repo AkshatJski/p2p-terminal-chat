@@ -55,6 +55,15 @@ If none exists, defaults are used and the app prints
 | `frame.max.size`     | `1048576` (1 MiB)                    | Max accepted encrypted frame size in bytes |
 | `handshake.timeout.ms` | `10000`                            | Crypto handshake timeout in ms |
 | `mesh.ttl`           | `8`                                  | Mesh flooding time-to-live (max hops) |
+| `reconnect.enabled`  | `true`                               | Auto-reconnect on connection loss |
+| `reconnect.max`      | `12`                                 | Max reconnect attempts before giving up |
+| `reconnect.base.ms`  | `1000`                               | Base delay between reconnect attempts (ms) |
+| `reconnect.max.ms`   | `30000`                              | Maximum delay cap for exponential backoff (ms) |
+| `trust.server.enabled` | `true`                             | Enable HTTP trust verification server |
+| `trust.server.port`  | `0` (auto)                           | Port for the HTTP trust server (0 = pick free port) |
+| `web.enabled`        | `true`                               | Enable the browser WebSocket chat client |
+| `web.port`           | `8082`                               | Port for the browser WebSocket endpoint (0 = auto) |
+| `web.http.port`      | `8083`                               | Port that serves the chat page (0 = auto) |
 
 Path values may use `${user.home}` for a home-relative path. Range-checks
 (e.g. port 1-65535) fall back to the default with a warning.
