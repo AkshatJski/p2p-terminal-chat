@@ -17,7 +17,8 @@ WiFi at all (multi-hop mesh).
 - **End-to-end encrypted** — X25519 (ECDH) key exchange, AES-256-GCM per message, HKDF-SHA256 key derivation. All cryptography is from the JDK standard library.
 - **Group rooms** — hosts relay `@MSG` to every member; `@join`, `@list`, `@users`.
 - **Rooms across networks** — `@link <host> [port]` bridges hosts; the same room name becomes one shared room (`alice@A6B5F2AC`).
-- **File sharing** — `@send <path>` sends any file/media by its path to everyone in the room (saved to `./downloads`).
+- **File sharing** — `@send <path>` sends any file/media by its path to everyone in the room (saved to `./downloads`). Live receive progress, `@cancel <file>` to abort a transfer, and collision-proof names (`avatar (1).png`) when the same name arrives twice.
+- **Terminal games** — play Tic-Tac-Toe (`@ttt`), Word Chain (`@chain`), Hangman (`@hang`), or Name That (`@guess`) with anyone in your room, right from the chat line.
 - **Moderation** — host `@kick`, `@ban`, `@unban`.
 - **Message history** — `@history [n]` replays recent in-room messages.
 - **Auto-reconnect** — exponential backoff (1s → 30s cap), rejoins your last room.
@@ -75,8 +76,13 @@ java -jar target/java-p2p-terminal-chat-1.0-SNAPSHOT.jar com.p2p.chat.mesh.MeshM
 | `@join <room>` / `@leave` | create/join or leave a room |
 | `@list` / `@users` | list rooms / users in the current room |
 | `@history [n]` | show recent messages in the current room |
-| `@send <file>` | share a file with the room |
+| `@send <file>` | share a file with the room (progress shown) |
+| `@cancel <file>` | abort an incoming file transfer |
 | `@link <host> [port]` | bridge rooms with another host |
+| `@ttt [move]` | play Tic-Tac-Toe in the room (`start`, `join`, `1 1`…`3 3`, `reset`) |
+| `@chain [word]` | play Word Chain (`start`, any word, `score`, `quit`) |
+| `@hang [letter]` | play Hangman (`start <word>`, any letter) |
+| `@guess [guess]` | play Name That (`start <movie|song|game>`, `hint`, `quit`) |
 | `@kick` / `@ban` / `@unban` | host moderation |
 | `@help` / `@exit` | help / disconnect |
 | `<text>` | send a message to the current room |
@@ -89,9 +95,10 @@ See [CONFIGURATION.md](CONFIGURATION.md).
 
 ## Tests
 
-A per-feature smoke harness exercises all 17 features end-to-end (crypto
-identity, rooms, relay, colors, typing, files, trust, history, moderation,
-auto-reconnect, bridging, and mesh flooding):
+A per-feature smoke harness exercises all 22 features end-to-end (crypto
+identity, rooms, relay, colors, typing, files + progress + cancel, trust,
+history, moderation, auto-reconnect, bridging, mesh flooding, and all four
+room games):
 
 ```bash
 javac -cp target/java-p2p-terminal-chat-1.0-SNAPSHOT.jar -d tool-out tool/FeatureSmokeTest.java
@@ -102,7 +109,6 @@ Exit code 0 = all tests passed.
 
 ## What's next (roadmap & ideas)
 
-- Terminal games playable inside a room
 - Sending files/media over mesh rooms
 - Persistent message history across restarts
 - Browser web client (removed from the core; revisit only if an encrypted

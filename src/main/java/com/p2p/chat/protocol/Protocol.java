@@ -28,6 +28,7 @@ public final class Protocol {
     public static final String FILE_START = "@FILE_START"; // FILE_START\0<fid>\0<room>\0<name>\0<bytes>\0<chunks>\0<sender>\0<host>
     public static final String FILE_CHUNK = "@FILE_CHUNK"; // FILE_CHUNK\0<fid>\0<room>\0<index>\0<b64 data>
     public static final String FILE_ABORT = "@FILE_ABORT"; // FILE_ABORT\0<fid>\0<room>\0<reason>
+    public static final String GAME = "@GAME";        // GAME\0<gameId> [args...]
 
     // Host -> Client
     public static final String FROM = "@FROM";        // FROM\0<room>\0<user>\0<host>\0<text>
@@ -36,6 +37,7 @@ public final class Protocol {
     public static final String ERR = "@ERR";          // ERR\0<text>
     public static final String SYS = "@SYS";          // SYS\0<text>
     public static final String JOINED = "@JOINED";    // JOINED\0<room> - room the participant was moved into
+    public static final String GAME_LINE = "@GAME_LINE"; // GAME_LINE\0<display text> - game output to a room
 
     // Host <-> Host (bridging)
     public static final String BRIDGE = "@BRIDGE";    // BRIDGE\0<comma,rooms> - link handshake

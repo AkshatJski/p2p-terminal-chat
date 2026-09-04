@@ -4,6 +4,7 @@ import com.p2p.chat.config.Config;
 import com.p2p.chat.crypto.CryptoUtil;
 import com.p2p.chat.crypto.Identity;
 import com.p2p.chat.crypto.SecureChannel;
+import com.p2p.chat.game.GameEngine;
 import com.p2p.chat.protocol.Protocol;
 import com.p2p.chat.transport.SocketTransport;
 import com.p2p.chat.util.Ansi;
@@ -51,6 +52,7 @@ public final class HostNode extends Node {
     private final List<Participant> participants = new CopyOnWriteArrayList<>();
     private final Participant self;
     private final FileReceiver fileReceiver;
+    private final GameEngine games = new GameEngine();
     private final String hostLabel;
     private final MessageHistory history = new MessageHistory();
     private final Set<String> bannedUsers = ConcurrentHashMap.newKeySet();
@@ -311,7 +313,42 @@ public final class HostNode extends Node {
                 }
                 peer.send(Protocol.command(Protocol.HIST_END));
             }
+            case Protocol.GAME -> runGame(peer, f.length > 1 ? f[1] : "");
             default -> peer.send(Protocol.command(Protocol.ERR, "Unknown command: " + f[0]));
+        }
+    }
+
+    /** Handles a client's {@code @GAME\0<gameId> [args]} line and echoes the outcome to the room. */
+    private void runGame(Participant peer, String spec) {
+        String room = peer.room();
+        if (room == null) {
+            peer.send(Protocol.command(Protocol.ERR, "Join a room first: @join <room>"));
+            return;
+        }
+        String s = spec == null ? "" : spec.trim();
+        if (s.isEmpty()) {
+            peer.send(Protocol.command(Protocol.ERR, "Usage: @ttt / @chain / @hang / @guess ..."));
+            return;
+        }
+        int sp = s.indexOf(' ');
+        String gameId = sp < 0 ? s : s.substring(0, sp);
+        String args = sp < 0 ? "" : s.substring(sp + 1).trim();
+        broadcastGame(room, games.command(room, peer.username(), gameId, args));
+    }
+
+    /** Sends a game display line to EVERY member of the room, including the one who triggered it. */
+    private void broadcastGame(String room, String text) {
+        CopyOnWriteArrayList<Participant> members = rooms.get(room);
+        if (members == null) {
+            return;
+        }
+        String line = Protocol.command(Protocol.GAME_LINE, text);
+        for (Participant member : members) {
+            if (member == self) {
+                handleConsoleMessage(line);
+            } else {
+                member.send(line);
+            }
         }
     }
 
@@ -339,6 +376,7 @@ public final class HostNode extends Node {
         if (members != null) {
             members.remove(participant);
             if (members.isEmpty() && rooms.remove(room, members)) {
+                games.cleanup(room);
                 syncLinkRooms();
             }
         }
@@ -391,6 +429,11 @@ public final class HostNode extends Node {
             case Protocol.SYS -> System.out.println(Ansi.color(Ansi.WHITE, Protocol.display(line)));
             case Protocol.ERR -> System.out.println(Ansi.color(Ansi.RED, Protocol.display(line)));
             case Protocol.JOINED -> { /* room already tracked; no console output needed */ }
+            case Protocol.GAME_LINE -> {
+                if (f.length >= 2) {
+                    System.out.println(Ansi.color(Ansi.MAGENTA, f[1]));
+                }
+            }
             case Protocol.FILE_START -> {
                 if (f.length < 7) {
                     return;
@@ -699,11 +742,31 @@ public final class HostNode extends Node {
                 broadcast(room, self, Protocol.command(Protocol.FILE_CHUNK, fid, room,
                         String.valueOf(i),
                         Base64.getEncoder().encodeToString(FileReceiver.chunk(all, i, chunkSize))));
+                printFileProgress(filename, i, count);
             }
             System.out.println(Ansi.color(Ansi.BRIGHT_GREEN, "[File] Sent " + filename + " (" + FileReceiver.human(all.length)
                     + ", " + count + " chunks) to room " + room));
         } catch (Exception e) {
             System.out.println(Ansi.color(Ansi.RED, "[File] Send failed: " + e.getMessage()));
+        }
+    }
+
+    /** Runs a game command from the host's own console and shows the outcome in the room. */
+    private void hostGame(String gameId, String args) {
+        if (self.room() == null) {
+            System.out.println(Ansi.color(Ansi.YELLOW, "[System] Join a room first: @join <room>"));
+            return;
+        }
+        String text = games.command(self.room(), username, gameId, args == null ? "" : args.trim());
+        broadcastGame(self.room(), text);
+    }
+
+    /** Prints a sender-side progress note at each 25% mark. */
+    private static void printFileProgress(String filename, int sent, int total) {
+        int pct = (int) ((sent + 1L) * 100 / total);
+        if (pct % 25 == 0) {
+            System.out.println(Ansi.color(Ansi.BRIGHT_YELLOW,
+                    "[File] " + filename + ": " + pct + "% (" + (sent + 1) + "/" + total + " chunks)"));
         }
     }
 
@@ -773,6 +836,20 @@ public final class HostNode extends Node {
                 }
                 sendFile(parts[1].trim(), self.room());
             }
+            case "@cancel" -> {
+                if (parts.length < 2 || parts[1].trim().isEmpty()) {
+                    System.out.println("[Usage] @cancel <filename>");
+                    return;
+                }
+                String msg = fileReceiver.cancelByName(parts[1].trim());
+                if (msg != null) {
+                    System.out.println(Ansi.color(Ansi.YELLOW, msg));
+                }
+            }
+            case "@ttt" -> hostGame("ttt", parts.length > 1 ? parts[1] : "");
+            case "@chain" -> hostGame("chain", parts.length > 1 ? parts[1] : "");
+            case "@hang" -> hostGame("hang", parts.length > 1 ? parts[1] : "");
+            case "@guess" -> hostGame("guess", parts.length > 1 ? parts[1] : "");
             case "@help" -> printHelp();
             default -> {
                 if (self.room() == null) {
@@ -849,6 +926,12 @@ public final class HostNode extends Node {
                   @users                list users in the current room
                   @link <host> [port]   bridge rooms with another host (same room name = same room)
                   @send <file>          send a file to the current room
+                  @cancel <file>        cancel an in-progress download by filename
+                  Games (play inside a room):
+                  @ttt                  tic-tac-toe (@ttt start / @ttt join / @ttt row-col)
+                  @chain                word chain (@chain start / @chain <word>)
+                  @hang                 hangman (@hang start <word> / @hang <letter>)
+                  @guess                name that movie/song/game (@guess start <cat> / @guess <title>)
                   @history [n]          show recent messages (n = count, default 20)
                   @kick <user>          disconnect a user
                   @ban <user>           kick + prevent user from reconnecting
