@@ -18,7 +18,7 @@ WiFi at all (multi-hop mesh).
 - **Group rooms** — hosts relay `@MSG` to every member; `@join`, `@list`, `@users`.
 - **Rooms across networks** — `@link <host> [port]` bridges hosts; the same room name becomes one shared room (`alice@A6B5F2AC`).
 - **File sharing** — `@send <path>` sends any file/media by its path to everyone in the room (saved to `./downloads`). Live receive progress, `@cancel <file>` to abort a transfer, and collision-proof names (`avatar (1).png`) when the same name arrives twice.
-- **Terminal games** — play Tic-Tac-Toe (`@ttt`), Word Chain (`@chain`), Hangman (`@hang`), or Name That (`@guess`) with anyone in your room, right from the chat line.
+- **Terminal games** — play Tic-Tac-Toe (`@ttt`), Word Chain (`@chain`), Hangman (`@hang`), or Name That (`@guess`) with anyone in your room, right from the chat line. Name That's movie/song rounds use **live keyless hints** (iTunes/Apple charts) when online and fall back to curated offline packs on any failure.
 - **Moderation** — host `@kick`, `@ban`, `@unban`.
 - **Message history** — `@history [n]` replays recent in-room messages.
 - **Auto-reconnect** — exponential backoff (1s → 30s cap), rejoins your last room.
@@ -95,10 +95,10 @@ See [CONFIGURATION.md](CONFIGURATION.md).
 
 ## Tests
 
-A per-feature smoke harness exercises all 22 features end-to-end (crypto
+A per-feature smoke harness exercises all 23 features end-to-end (crypto
 identity, rooms, relay, colors, typing, files + progress + cancel, trust,
-history, moderation, auto-reconnect, bridging, mesh flooding, and all four
-room games):
+history, moderation, auto-reconnect, bridging, mesh flooding, all four
+room games, and Name That's dynamic hint source + fallback):
 
 ```bash
 javac -cp target/java-p2p-terminal-chat-1.0-SNAPSHOT.jar -d tool-out tool/FeatureSmokeTest.java

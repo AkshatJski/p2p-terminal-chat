@@ -1,14 +1,23 @@
 package com.p2p.chat.game;
 
+import com.p2p.chat.config.Config;
+import com.p2p.chat.game.guess.HintSource;
+import com.p2p.chat.game.guess.ItunesHintSource;
+import java.util.Optional;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * "Name That..." — the system serves hidden movies, songs and video games, and
  * reveals one hint at a time. Players answer with {@code @guess <title>}.
  * Categories: {@code @guess movie}, {@code @guess song}, {@code @guess game}.
- * The pool is a curated built-in list (works offline, no API keys).
+ *
+ * <p>When online the movie/song clues come from a keyless live hint source
+ * (Apple's marketing RSS charts + iTunes lookup), falling back silently to the
+ * curated built-in packs on any network/parse failure (and when disabled via
+ * {@code guess.dynamic.enabled}). Games always use the built-in pack.
  */
 public final class NameThat implements Game {
+    private static final HintSource OFF = category -> Optional.empty();
     private static final Clue[] MOVIES = {
             cl("The Shawshank Redemption", "Prison-set; a banker is wrongly convicted and tunnelled out",
                     "The beach scene at the end", "Warden's 'Brooks was here'"),
@@ -81,6 +90,17 @@ public final class NameThat implements Game {
     private String category;
     private int hint;
     private boolean solved;
+    private final HintSource dynamic;
+
+    /** Live movie/song hints unless {@code guess.dynamic.enabled=false}. */
+    public NameThat() {
+        this(Config.get().isGuessDynamicEnabled() ? new ItunesHintSource() : OFF);
+    }
+
+    /** Game pinned to an explicit hint source (used by the harness/tests). */
+    public NameThat(HintSource source) {
+        this.dynamic = source;
+    }
 
     @Override
     public String handle(String user, String args) {
@@ -100,16 +120,16 @@ public final class NameThat implements Game {
                 return "Start a round first: @guess start <movie|song|game>";
             }
             hint++;
-            while (hint < current.hints.length && (current.hints[hint] == null || current.hints[hint].isEmpty())) {
+            while (hint < current.hints().length && (current.hints()[hint] == null || current.hints()[hint].isEmpty())) {
                 hint++;
             }
-            if (hint < current.hints.length) {
-                return "Hint " + (hint + 1) + ": " + current.hints[hint];
+            if (hint < current.hints().length) {
+                return "Hint " + (hint + 1) + ": " + current.hints()[hint];
             }
-            return "Out of hints! The answer was: " + current.title + "\nNew round: @guess start <category>";
+            return "Out of hints! The answer was: " + current.title() + "\nNew round: @guess start <category>";
         }
         if (act.equals("quit") || act.equals("end")) {
-            String ans = current != null ? " The answer was: " + current.title : "";
+            String ans = current != null ? " The answer was: " + current.title() : "";
             current = null;
             return "Name That round ended." + ans;
         }
@@ -118,39 +138,54 @@ public final class NameThat implements Game {
             return "Start a round first: @guess start <movie|song|game>";
         }
         if (solved) {
-            return "Solved! The answer was " + current.title.toUpperCase()
+            return "Solved! The answer was " + current.title().toUpperCase()
                     + ". New round: @guess start <category>";
         }
-        if (normalize(args).equals(normalize(current.title))) {
+        if (normalize(args).equals(normalize(current.title()))) {
             solved = true;
-            String title = current.title;
+            String title = current.title();
             current = null;
             return "[Correct] " + user + " guessed it: " + title.toUpperCase() + "!\n"
                     + "New round: @guess start <category>";
         }
-        String nextHint = hint + 1 < current.hints.length && current.hints[hint + 1] != null
+        String nextHint = hint + 1 < current.hints().length && current.hints()[hint + 1] != null
                 ? " Next hint: @guess hint" : " No more hints: @guess take-any-answer";
         return "Not that, " + user + "." + nextHint;
     }
 
     private String startRound(String cat) {
-        Clue[] pool = switch (cat) {
-            case "movie", "movies" -> MOVIES;
-            case "song", "songs", "music" -> SONGS;
-            case "game", "games" -> GAMES;
+        String key = switch (cat) {
+            case "movie", "movies" -> "movie";
+            case "song", "songs", "music" -> "song";
+            case "game", "games" -> "game";
             default -> null;
         };
-        if (pool == null) {
+        if (key == null) {
             return "Category must be movie, song or game. E.g. @guess start movie";
         }
-        current = pool[ThreadLocalRandom.current().nextInt(pool.length)];
-        category = cat;
+        Clue clue = null;
+        if (dynamic != null && ("movie".equals(key) || "song".equals(key))) {
+            clue = dynamic.fetch(key).orElse(null);
+        }
+        if (clue == null) {
+            clue = builtIn(key)[ThreadLocalRandom.current().nextInt(builtIn(key).length)];
+        }
+        current = clue;
+        category = key;
         hint = 0;
         solved = false;
-        String h1 = current.hints[0] == null || current.hints[0].isEmpty()
-                ? current.hints[1] : current.hints[0];
-        return "Name That " + cat.toUpperCase() + "!\nGuess the title with @guess <title>.\n"
+        String h1 = current.hints()[0] == null || current.hints()[0].isEmpty()
+                ? current.hints()[1] : current.hints()[0];
+        return "Name That " + key.toUpperCase() + "!\nGuess the title with @guess <title>.\n"
                 + "Hint 1: " + h1;
+    }
+
+    private static Clue[] builtIn(String key) {
+        return switch (key) {
+            case "movie" -> MOVIES;
+            case "song" -> SONGS;
+            default -> GAMES;
+        };
     }
 
     private static String randomCategory() {
@@ -172,8 +207,5 @@ public final class NameThat implements Game {
                 + "  @guess hint                      reveal the next hint\n"
                 + "  @guess <title>                   answer the current clue\n"
                 + "  @guess quit                      end the round";
-    }
-
-    private record Clue(String title, String[] hints) {
     }
 }

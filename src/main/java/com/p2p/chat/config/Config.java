@@ -40,6 +40,9 @@ public final class Config {
     public static final String KEY_RECONNECT_MAX_MS = "reconnect.max.ms";
     public static final String KEY_TRUST_SERVER_ENABLED = "trust.server.enabled";
     public static final String KEY_TRUST_SERVER_PORT = "trust.server.port";
+    public static final String KEY_GUESS_DYNAMIC_ENABLED = "guess.dynamic.enabled";
+    public static final String KEY_GUESS_DYNAMIC_TIMEOUT_MS = "guess.dynamic.timeout.ms";
+    public static final String KEY_GUESS_DYNAMIC_BASE_URL = "guess.dynamic.base.url";
 
     // Built-in defaults.
     public static final int DEFAULT_PORT = 8080;
@@ -53,6 +56,8 @@ public final class Config {
     public static final long DEFAULT_RECONNECT_MAX_MS = 30_000;
     public static final boolean DEFAULT_TRUST_SERVER_ENABLED = true;
     public static final int DEFAULT_TRUST_SERVER_PORT = 0; // auto-pick
+    public static final boolean DEFAULT_GUESS_DYNAMIC_ENABLED = true;
+    public static final int DEFAULT_GUESS_DYNAMIC_TIMEOUT_MS = 2_500;
 
     public static final Path DEFAULT_DIR = Path.of(System.getProperty("user.home"), ".p2p-chat");
     public static final Path DEFAULT_CONFIG_FILE = DEFAULT_DIR.resolve("config.properties");
@@ -226,6 +231,26 @@ public final class Config {
     /** Port for the HTTP trust server (0 = auto-pick a free port). */
     public int getTrustServerPort() {
         return bounded(KEY_TRUST_SERVER_PORT, DEFAULT_TRUST_SERVER_PORT, 0, 65535);
+    }
+
+    /** Whether the Name That game fetches live keyless hints (iTunes/Apple charts). */
+    public boolean isGuessDynamicEnabled() {
+        return getBool(KEY_GUESS_DYNAMIC_ENABLED, DEFAULT_GUESS_DYNAMIC_ENABLED);
+    }
+
+    /** Per-request timeout for the dynamic hint fetch, in milliseconds. */
+    public int getGuessDynamicTimeoutMs() {
+        return bounded(KEY_GUESS_DYNAMIC_TIMEOUT_MS, DEFAULT_GUESS_DYNAMIC_TIMEOUT_MS, 500, 15_000);
+    }
+
+    /**
+     * Optional override for the dynamic hint endpoints (both the chart and the
+     * lookup host) — intended for self-hosted mirrors and tests. Empty means
+     * the default Apple hosts are used.
+     */
+    public String getGuessDynamicBaseUrl() {
+        String v = props.getProperty(KEY_GUESS_DYNAMIC_BASE_URL);
+        return v == null ? "" : v.trim();
     }
 
     /** The config file that was used, or the default path when none existed. */

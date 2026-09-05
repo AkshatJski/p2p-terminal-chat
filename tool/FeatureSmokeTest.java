@@ -8,15 +8,21 @@ import com.p2p.chat.core.ClientNode;
 import com.p2p.chat.crypto.Identity;
 import com.p2p.chat.crypto.SecureChannel;
 import com.p2p.chat.crypto.TrustStore;
+import com.p2p.chat.game.NameThat;
+import com.p2p.chat.game.guess.HintSource;
+import com.p2p.chat.game.guess.ItunesHintSource;
 import com.p2p.chat.mesh.MeshNode;
 import com.p2p.chat.protocol.Protocol;
 import com.p2p.chat.transport.SocketTransport;
 import com.p2p.chat.util.Ansi;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
 import java.io.ByteArrayOutputStream;
 import java.security.GeneralSecurityException;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
+import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -26,7 +32,9 @@ import java.net.http.HttpResponse.BodyHandlers;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Base64;
+import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
@@ -278,6 +286,7 @@ public class FeatureSmokeTest {
         feature("20 Game: Word Chain", FeatureSmokeTest::f20WordChain);
         feature("21 Game: Hangman", FeatureSmokeTest::f21Hangman);
         feature("22 Game: Name That (movie/song/game hints)", FeatureSmokeTest::f22NameThat);
+        feature("23 Game: Name That dynamic source + fallback", FeatureSmokeTest::f23NameThatDynamic);
 
         System.out.println("\n===== SUMMARY =====");
         System.out.println("PASSED: " + passed + "  FAILED: " + failed);
@@ -1090,7 +1099,7 @@ public class FeatureSmokeTest {
 
     private static void f22NameThat() throws Exception {
         Path d = dir();
-        configure(d, "trust.server.enabled=false");
+        configure(d, "trust.server.enabled=false", "guess.dynamic.enabled=false");
         int p = port();
         Object[] o = roomWithPeers(d, p, "alice", "carol");
         HostNode host = (HostNode) o[0];
@@ -1127,6 +1136,85 @@ public class FeatureSmokeTest {
             check(carol.await(GAME_LINE("The answer was:"), 3000) != null, "game round ends");
         } finally {
             host.close();
+        }
+    }
+
+    // 23 -----------------------------------------------------------------
+
+    private static void f23NameThatDynamic() throws Exception {
+        String songChart = "{\"feed\":{\"results\":[{\"id\":\"358410113\",\"name\":\"Anthem\","
+                + "\"artistName\":\"Bohemian Test Band\",\"releaseDate\":\"1975-10-31\","
+                + "\"genreNames\":[\"Rock\"]}]}}";
+        String songLookup = "{\"resultCount\":1,\"results\":[{\"wrapperType\":\"track\",\"kind\":\"song\","
+                + "\"trackName\":\"Anthem\",\"artistName\":\"Bohemian Test Band\","
+                + "\"collectionName\":\"A Night at the Test Opera\","
+                + "\"releaseDate\":\"1975-10-31T07:00:00Z\",\"primaryGenreName\":\"Rock\","
+                + "\"trackTimeMillis\":354000}]}";
+        String movieChart = "{\"feed\":{\"results\":[{\"id\":\"284709018\",\"name\":\"Gravity\","
+                + "\"artistName\":\"Warner Bros.\",\"releaseDate\":\"2013-10-04\"}]}}";
+        String movieLookup = "{\"resultCount\":1,\"results\":[{\"wrapperType\":\"track\",\"kind\":\"movie\","
+                + "\"trackName\":\"Gravity\",\"releaseDate\":\"2013-10-04T07:00:00Z\","
+                + "\"primaryGenreName\":\"Sci-Fi & Fantasy\",\"trackTimeMillis\":5460000,"
+                + "\"longDescription\":\"A medical engineer and an astronaut survive after a disaster "
+                + "leaves them adrift in space.\"}]}";
+
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/api/v2/us/music/most-played/20/songs.json",
+                ex -> respond(ex, songChart));
+        server.createContext("/api/v2/us/movies/top-movies/25/movies.json",
+                ex -> respond(ex, movieChart));
+        server.createContext("/lookup", ex -> respond(ex, ex.getRequestURI().getRawQuery().contains("284709018")
+                ? movieLookup : songLookup));
+        server.start();
+        String base = "http://127.0.0.1:" + server.getAddress().getPort();
+
+        try {
+            NameThat g = new NameThat(new ItunesHintSource(base, base, Duration.ofSeconds(3)));
+
+            String songStart = g.handle("alice", "start song");
+            check(songStart.contains("Name That SONG"), "dynamic song round begins");
+            check(songStart.contains("Hint 1: Genre: Rock"), "song hint 1 uses live genre");
+            check(g.handle("alice", "hint").contains("Released in 1975"), "song hint 2 uses live year");
+            check(g.handle("alice", "hint").contains("Bohemian Test Band"), "song hint 3 uses live artist");
+            String hint4 = g.handle("alice", "hint");
+            check(hint4.contains("About 5 min") && hint4.contains("A Night at the Test Opera"),
+                    "song hint 4 album + duration");
+            check(g.handle("alice", "Anthem").contains("[Correct]"), "dynamic song answer accepted");
+
+            String movieStart = g.handle("bob", "start movie");
+            check(movieStart.contains("Name That MOVIE"), "dynamic movie round begins");
+            check(movieStart.contains("Hint 1: Genre: Sci-Fi & Fantasy"), "movie hint 1 uses live genre");
+            check(g.handle("bob", "hint").contains("Released in 2013"), "movie hint 2 uses live year");
+            check(g.handle("bob", "hint").contains("Runtime: 91 min"), "movie hint 3 runtime");
+            check(g.handle("bob", "Gravity").contains("[Correct]"), "dynamic movie answer accepted");
+
+            check(g.handle("alice", "start song").contains("Name That SONG"), "cached song round repeats");
+        } finally {
+            server.stop(0);
+        }
+
+        // Stopped server => network failure => silent built-in fallback.
+        NameThat offline = new NameThat(new ItunesHintSource(
+                "http://127.0.0.1:" + server.getAddress().getPort(),
+                "http://127.0.0.1:" + server.getAddress().getPort(),
+                Duration.ofMillis(800)));
+        String start = offline.handle("alice", "start song");
+        check(start.contains("Name That SONG") && start.contains("Hint 1:"), "offline fallback round works");
+        String quit = offline.handle("alice", "quit");
+        check(quit.startsWith("Name That round ended.") && quit.contains("The answer was: "),
+                "offline fallback reveals the built-in answer");
+
+        // Explicit empty source behaves the same (pure-stub path).
+        NameThat stub = new NameThat(cat -> Optional.empty());
+        check(stub.handle("carol", "start movie").contains("Name That MOVIE"), "empty-source round works");
+    }
+
+    private static void respond(HttpExchange ex, String body) throws IOException {
+        byte[] b = body.getBytes(StandardCharsets.UTF_8);
+        ex.getResponseHeaders().set("Content-Type", "application/json");
+        ex.sendResponseHeaders(200, b.length);
+        try (OutputStream os = ex.getResponseBody()) {
+            os.write(b);
         }
     }
 }
