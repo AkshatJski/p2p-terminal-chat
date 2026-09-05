@@ -107,6 +107,12 @@ java  -cp "tool-out;target/java-p2p-terminal-chat-1.0-SNAPSHOT.jar" FeatureSmoke
 
 Exit code 0 = all tests passed.
 
+Unit tests for the game logic run under JUnit 5 during the build (`mvn test`):
+
+```bash
+mvn test
+```
+
 ## What's next (roadmap & ideas)
 
 - Sending files/media over mesh rooms

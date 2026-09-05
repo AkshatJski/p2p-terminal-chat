@@ -16,6 +16,7 @@ import java.security.spec.NamedParameterSpec;
 import java.security.spec.XECPrivateKeySpec;
 import java.security.spec.XECPublicKeySpec;
 import java.util.Base64;
+import java.util.HexFormat;
 import javax.crypto.Cipher;
 import javax.crypto.KeyAgreement;
 import javax.crypto.Mac;
@@ -99,14 +100,8 @@ public final class CryptoUtil {
             b = t;
         }
         byte[] digest = MessageDigest.getInstance("SHA-256").digest(concat(a, b));
-        StringBuilder sb = new StringBuilder(19);
-        for (int i = 0; i < 8; i++) {
-            if (i == 4) {
-                sb.append('-');
-            }
-            sb.append(String.format("%02X", digest[i]));
-        }
-        return sb.toString(); // e.g. "A1B2C3D4-E5F6A7B8"
+        HexFormat hex = HexFormat.of().withUpperCase();
+        return hex.formatHex(digest, 0, 4) + "-" + hex.formatHex(digest, 4, 8); // e.g. "A1B2C3D4-E5F6A7B8"
     }
 
     private static int compareUnsigned(byte[] a, byte[] b) {
