@@ -61,9 +61,9 @@ If none exists, defaults are used and the app prints
 | `reconnect.max.ms`   | `30000`                              | Maximum delay cap for exponential backoff (ms) |
 | `trust.server.enabled` | `true`                             | Enable HTTP trust verification server |
 | `trust.server.port`  | `0` (auto)                           | Port for the HTTP trust server (0 = pick free port) |
-| `web.enabled`        | `true`                               | Enable the browser WebSocket chat client |
-| `web.port`           | `8082`                               | Port for the browser WebSocket endpoint (0 = auto) |
-| `web.http.port`      | `8083`                               | Port that serves the chat page (0 = auto) |
+| `guess.dynamic.enabled` | `true`                            | Fetch live keyless hints (iTunes/Apple charts) for `@guess movie|song`; `false` forces the built-in packs |
+| `guess.dynamic.timeout.ms` | `2500`                          | Per-request timeout for the dynamic hint fetch (500–15000 ms) |
+| `guess.dynamic.base.url` | *(empty)*                          | Override both dynamic-endpoint hosts (self-hosted mirror / tests); empty = default Apple hosts |
 
 Path values may use `${user.home}` for a home-relative path. Range-checks
 (e.g. port 1-65535) fall back to the default with a warning.

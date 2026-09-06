@@ -85,6 +85,12 @@ public final class ClientNode extends Node {
                     + (f[2].isEmpty() ? "none" : f[2])));
             case Protocol.SYS -> System.out.println(Ansi.color(Ansi.WHITE, Protocol.display(line)));
             case Protocol.ERR -> System.out.println(Ansi.color(Ansi.RED, Protocol.display(line)));
+            case Protocol.JOINED -> { /* room already tracked locally; no output needed */ }
+            case Protocol.GAME_LINE -> {
+                if (f.length >= 2) {
+                    System.out.println(Ansi.color(Ansi.MAGENTA, f[1]));
+                }
+            }
             case Protocol.FROM -> {
                 if (f.length >= 5) {
                     System.out.println("[Room " + Ansi.color(Ansi.YELLOW, f[1]) + "] "
@@ -221,6 +227,20 @@ public final class ClientNode extends Node {
                 }
                 sendFile(parts[1].trim(), currentRoom);
             }
+            case "@cancel" -> {
+                if (parts.length < 2 || parts[1].trim().isEmpty()) {
+                    System.out.println(Ansi.color(Ansi.YELLOW, "[Usage] @cancel <filename>"));
+                    return;
+                }
+                String msg = fileReceiver.cancelByName(parts[1].trim());
+                if (msg != null) {
+                    System.out.println(Ansi.color(Ansi.YELLOW, msg));
+                }
+            }
+            case "@ttt" -> gameCmd("ttt", parts.length > 1 ? parts[1] : "");
+            case "@chain" -> gameCmd("chain", parts.length > 1 ? parts[1] : "");
+            case "@hang" -> gameCmd("hang", parts.length > 1 ? parts[1] : "");
+            case "@guess" -> gameCmd("guess", parts.length > 1 ? parts[1] : "");
             case "@exit" -> close();
             default -> {
                 if (currentRoom == null) {
@@ -251,11 +271,31 @@ public final class ClientNode extends Node {
             for (int i = 0; i < count; i++) {
                 send(Protocol.command(Protocol.FILE_CHUNK, fid, room, String.valueOf(i),
                         Base64.getEncoder().encodeToString(FileReceiver.chunk(all, i, chunkSize))));
+                sendFileProgress(filename, i, count);
             }
             System.out.println(Ansi.color(Ansi.BRIGHT_GREEN, "[File] Sent " + filename + " (" + FileReceiver.human(all.length)
                     + ", " + count + " chunks) to room " + room));
         } catch (Exception e) {
             System.out.println(Ansi.color(Ansi.RED, "[File] Send failed: " + e.getMessage()));
+        }
+    }
+
+    /** Maps a friendly room-game command to the {@code @GAME} protocol line. */
+    private void gameCmd(String gameId, String args) {
+        if (currentRoom == null) {
+            System.out.println(Ansi.color(Ansi.YELLOW, "[System] Join a room first: @join <room>"));
+            return;
+        }
+        String spec = args == null || args.isEmpty() ? gameId : gameId + " " + args.trim();
+        send(Protocol.command(Protocol.GAME, spec));
+    }
+
+    /** Prints a sender-side progress note at each 25% mark. */
+    private static void sendFileProgress(String filename, int sent, int total) {
+        int pct = (int) ((sent + 1L) * 100 / total);
+        if (pct % 25 == 0) {
+            System.out.println(Ansi.color(Ansi.BRIGHT_YELLOW,
+                    "[File] " + filename + ": " + pct + "% (" + (sent + 1) + "/" + total + " chunks)"));
         }
     }
 
@@ -268,6 +308,12 @@ public final class ClientNode extends Node {
                   @users         list users in the current room
                   @history [n]   show recent messages in the current room
                   @send <file>   send a file to the current room
+                  @cancel <file> cancel an in-progress download by filename
+                  Games (play inside a room):
+                  @ttt           tic-tac-toe (@ttt start / @ttt join / @ttt row-col)
+                  @chain         word chain (@chain start / @chain <word>)
+                  @hang          hangman (@hang start <word> / @hang <letter>)
+                  @guess         name that movie/song/game (@guess start <cat> / @guess <title>)
                   @exit          disconnect
                   <text>         send a message to the current room"""));
     }

@@ -8,15 +8,21 @@ import com.p2p.chat.core.ClientNode;
 import com.p2p.chat.crypto.Identity;
 import com.p2p.chat.crypto.SecureChannel;
 import com.p2p.chat.crypto.TrustStore;
+import com.p2p.chat.game.NameThat;
+import com.p2p.chat.game.guess.HintSource;
+import com.p2p.chat.game.guess.ItunesHintSource;
 import com.p2p.chat.mesh.MeshNode;
 import com.p2p.chat.protocol.Protocol;
 import com.p2p.chat.transport.SocketTransport;
 import com.p2p.chat.util.Ansi;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
 import java.io.ByteArrayOutputStream;
 import java.security.GeneralSecurityException;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
+import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -26,12 +32,12 @@ import java.net.http.HttpResponse.BodyHandlers;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Base64;
+import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
-import org.java_websocket.client.WebSocketClient;
-import org.java_websocket.handshake.ServerHandshake;
 
 /**
  * Per-feature smoke harness. Compile against the shaded jar and run:
@@ -249,54 +255,6 @@ public class FeatureSmokeTest {
         }
     }
 
-    // ------------------------------------------------------------------
-    // Browser WebSocket client
-    // ------------------------------------------------------------------
-
-    static final class WebPeer extends WebSocketClient {
-        final CopyOnWriteArrayList<String> rx = new CopyOnWriteArrayList<>();
-        final AtomicInteger idx = new AtomicInteger();
-
-        WebPeer(int wsPort) throws Exception {
-            super(new URI("ws://localhost:" + wsPort + "/ws"));
-        }
-
-        @Override
-        public void onOpen(ServerHandshake h) {
-            rx.add("OPEN");
-        }
-
-        @Override
-        public void onMessage(String m) {
-            rx.add(m);
-        }
-
-        @Override
-        public void onClose(int code, String reason, boolean remote) {
-            rx.add("CLOSE");
-        }
-
-        @Override
-        public void onError(Exception e) {
-        }
-
-        String await(Predicate<String> p, long ms) throws InterruptedException {
-            long end = System.currentTimeMillis() + ms;
-            while (System.currentTimeMillis() < end) {
-                int i = idx.get();
-                if (i < rx.size() && idx.compareAndSet(i, i + 1)) {
-                    String l = rx.get(i);
-                    if (p.test(l)) {
-                        return l;
-                    }
-                } else {
-                    Thread.sleep(15);
-                }
-            }
-            return null;
-        }
-    }
-
     private static final Predicate<String> FROM_CONTAINS(String text) {
         return l -> l.startsWith("@FROM") && l.contains(text);
     }
@@ -323,9 +281,12 @@ public class FeatureSmokeTest {
         feature("15 Auto-reconnect after kick (send + receive)", FeatureSmokeTest::f15Reconnect);
         feature("16 Host-to-host bridging (@link)", FeatureSmokeTest::f16Bridge);
         feature("17 Mesh flooding (3 nodes, TTL + dedup)", FeatureSmokeTest::f17Mesh);
-        feature("18 Web client: page served + WS connect", FeatureSmokeTest::f18WebBasic);
-        feature("19 Web <-> terminal interop + shared history", FeatureSmokeTest::f19WebInterop);
-        feature("20 Moderation: kick a web user", FeatureSmokeTest::f20WebKick);
+        feature("18 File polish: host @send, dup-name collision, @cancel", FeatureSmokeTest::f18FilesPolish);
+        feature("19 Game: Tic-Tac-Toe", FeatureSmokeTest::f19TicTacToe);
+        feature("20 Game: Word Chain", FeatureSmokeTest::f20WordChain);
+        feature("21 Game: Hangman", FeatureSmokeTest::f21Hangman);
+        feature("22 Game: Name That (movie/song/game hints)", FeatureSmokeTest::f22NameThat);
+        feature("23 Game: Name That dynamic source + fallback", FeatureSmokeTest::f23NameThatDynamic);
 
         System.out.println("\n===== SUMMARY =====");
         System.out.println("PASSED: " + passed + "  FAILED: " + failed);
@@ -384,7 +345,7 @@ public class FeatureSmokeTest {
 
     private static void f03Connect() throws Exception {
         Path d = dir();
-        configure(d, "web.enabled=false", "trust.server.enabled=false");
+        configure(d, "trust.server.enabled=false");
         int p = port();
         HostNode host = new HostNode("host", p, identity(d, "host"), new TrustGate(trust(d)), YES);
         host.start();
@@ -408,7 +369,7 @@ public class FeatureSmokeTest {
 
     private static void f04Tofu() throws Exception {
         Path d = dir();
-        configure(d, "web.enabled=false", "trust.server.enabled=false");
+        configure(d, "trust.server.enabled=false");
         int p = port();
         TrustStore store = trust(d);
         HostNode host = new HostNode("host", p, identity(d, "host"), new TrustGate(store), YES);
@@ -440,7 +401,7 @@ public class FeatureSmokeTest {
 
     private static void f05Mismatch() throws Exception {
         Path d = dir();
-        configure(d, "web.enabled=false", "trust.server.enabled=false");
+        configure(d, "trust.server.enabled=false");
         int p = port();
         TrustStore store = trust(d);
         HostNode host = new HostNode("host", p, identity(d, "host"), new TrustGate(store), YES);
@@ -467,7 +428,7 @@ public class FeatureSmokeTest {
 
     private static void f06Rooms() throws Exception {
         Path d = dir();
-        configure(d, "web.enabled=false", "trust.server.enabled=false");
+        configure(d, "trust.server.enabled=false");
         int p = port();
         HostNode host = new HostNode("host", p, identity(d, "host"), new TrustGate(trust(d)), YES);
         host.start();
@@ -503,7 +464,7 @@ public class FeatureSmokeTest {
 
     private static void f07Relay() throws Exception {
         Path d = dir();
-        configure(d, "web.enabled=false", "trust.server.enabled=false");
+        configure(d, "trust.server.enabled=false");
         int p = port();
         HostNode host = new HostNode("host", p, identity(d, "host"), new TrustGate(trust(d)), YES);
         host.start();
@@ -535,7 +496,7 @@ public class FeatureSmokeTest {
 
     private static void f09Typing() throws Exception {
         Path d = dir();
-        configure(d, "web.enabled=false", "trust.server.enabled=false");
+        configure(d, "trust.server.enabled=false");
         int p = port();
         HostNode host = new HostNode("host", p, identity(d, "host"), new TrustGate(trust(d)), YES);
         host.start();
@@ -560,7 +521,7 @@ public class FeatureSmokeTest {
     private static void f10Files() throws Exception {
         Path d = dir();
         Path dl = d.resolve("downloads");
-        configure(d, "web.enabled=false", "trust.server.enabled=false", "download.dir=" + dl);
+        configure(d, "trust.server.enabled=false", "download.dir=" + dl);
         int p = port();
         HostNode host = new HostNode("host", p, identity(d, "host"), new TrustGate(trust(d)), YES);
         host.start();
@@ -636,7 +597,7 @@ public class FeatureSmokeTest {
 
     private static void f12History() throws Exception {
         Path d = dir();
-        configure(d, "web.enabled=false", "trust.server.enabled=false");
+        configure(d, "trust.server.enabled=false");
         int p = port();
         HostNode host = new HostNode("host", p, identity(d, "host"), new TrustGate(trust(d)), YES);
         host.start();
@@ -681,7 +642,7 @@ public class FeatureSmokeTest {
 
     private static void f13Kick() throws Exception {
         Path d = dir();
-        configure(d, "web.enabled=false", "trust.server.enabled=false");
+        configure(d, "trust.server.enabled=false");
         int p = port();
         HostNode host = new HostNode("host", p, identity(d, "host"), new TrustGate(trust(d)), YES);
         host.start();
@@ -712,7 +673,7 @@ public class FeatureSmokeTest {
 
     private static void f14Ban() throws Exception {
         Path d = dir();
-        configure(d, "web.enabled=false", "trust.server.enabled=false");
+        configure(d, "trust.server.enabled=false");
         int p = port();
         HostNode host = new HostNode("host", p, identity(d, "host"), new TrustGate(trust(d)), YES);
         host.start();
@@ -742,7 +703,7 @@ public class FeatureSmokeTest {
 
     private static void f15Reconnect() throws Exception {
         Path d = dir();
-        configure(d, "web.enabled=false", "trust.server.enabled=false",
+        configure(d, "trust.server.enabled=false",
                 "reconnect.enabled=true", "reconnect.max=5", "reconnect.base.ms=50", "reconnect.max.ms=200");
         int p = port();
         TrustStore store = trust(d);
@@ -785,7 +746,7 @@ public class FeatureSmokeTest {
 
     private static void f16Bridge() throws Exception {
         Path d = dir();
-        configure(d, "web.enabled=false", "trust.server.enabled=false");
+        configure(d, "trust.server.enabled=false");
         int pa = port();
         int pb = port();
         TrustStore storeA = trust(d);
@@ -829,7 +790,7 @@ public class FeatureSmokeTest {
 
     private static void f17Mesh() throws Exception {
         Path d = dir();
-        configure(d, "web.enabled=false", "trust.server.enabled=false", "mesh.ttl=8");
+        configure(d, "trust.server.enabled=false", "mesh.ttl=8");
         int p2 = port();
         MeshNode n1 = new MeshNode("n1", identity(d, "n1"), new TrustGate(trust(d)));
         MeshNode n2 = new MeshNode("n2", identity(d, "n2"), new TrustGate(trust(d)));
@@ -860,85 +821,182 @@ public class FeatureSmokeTest {
         n3.close();
     }
 
+    // ------------------------------------------------------------------
+    // Room-game helpers
+    // ------------------------------------------------------------------
+
+    private static final Predicate<String> GAME_LINE(String text) {
+        return l -> l.startsWith(Protocol.GAME_LINE + Protocol.SEP) && l.contains(text);
+    }
+
+    /** Host + two raw peers, all in room "general". */
+    private static Object[] roomWithPeers(Path d, int port,
+                                          String a, String b) throws Exception {
+        HostNode host = new HostNode("host", port, identity(d, "host"),
+                new TrustGate(trust(d)), YES);
+        host.start();
+        host.handleUserInput("@join general");
+        Peer pa = new Peer(a, port, identity(d, a));
+        Peer pb = new Peer(b, port, identity(d, b));
+        Thread.sleep(300);
+        pa.join("general");
+        pb.join("general");
+        Thread.sleep(200);
+        return new Object[]{host, pa, pb};
+    }
+
     // 18 -----------------------------------------------------------------
 
-    private static void f18WebBasic() throws Exception {
+    private static void f18FilesPolish() throws Exception {
         Path d = dir();
-        int ws = port();
-        int http = port();
-        configure(d, "web.enabled=true", "web.port=" + ws, "web.http.port=" + http,
-                "trust.server.enabled=false");
+        Path dl = d.resolve("downloads");
+        configure(d, "trust.server.enabled=false", "download.dir=" + dl);
         int p = port();
         HostNode host = new HostNode("host", p, identity(d, "host"), new TrustGate(trust(d)), YES);
         host.start();
-        try {
-            HttpClient hc = HttpClient.newHttpClient();
-            String page = hc.send(HttpRequest.newBuilder(URI.create("http://localhost:" + http + "/")).GET().build(),
-                    BodyHandlers.ofString()).body();
-            check(page.contains("P2P Chat"), "chat page served");
-            check(!page.contains("__WS_PORT__") && page.contains(String.valueOf(ws)),
-                    "page injects ws port " + ws);
+        try (Peer alice = new Peer("alice", p, identity(d, "alice"));
+             ClientNode bob = new ClientNode("bob", "localhost", p, identity(d, "bob"),
+                     new TrustGate(trust(d)), YES)) {
+            Thread.sleep(300);
+            host.handleUserInput("@join general");
+            alice.join("general");
+            bob.start();
+            bob.handleUserInput("@join general");
+            Thread.sleep(300);
 
-            WebPeer w = new WebPeer(ws);
-            w.connect();
-            check(w.await(l -> l.equals("OPEN"), 5000) != null, "browser ws opens");
-            w.send("@NAME" + Protocol.SEP + "wally");
-            check(w.await(l -> l.startsWith("@SYS") && l.contains("Connected as wally"), 3000) != null,
-                    "ws registration accepted");
-            w.close();
+            byte[] blob = new byte[100_111];
+            new java.util.Random(42).nextBytes(blob);
+            Path src = d.resolve("payload.bin");
+            Files.write(src, blob);
+            int chunkSize = FileReceiver.chunkSize();
+            int chunkCount = FileReceiver.chunkCount(blob.length, chunkSize);
+
+            // Round 1: alice sends; host console + bob both receive -> unique names.
+            String fid1 = java.util.UUID.randomUUID().toString();
+            alice.send(SEP_F(fid1, "general", "payload.bin", blob.length, chunkCount, "alice"));
+            for (int i = 0; i < chunkCount; i++) {
+                alice.send("@FILE_CHUNK" + Protocol.SEP + fid1 + Protocol.SEP + "general" + Protocol.SEP
+                        + i + Protocol.SEP + Base64.getEncoder().encodeToString(FileReceiver.chunk(blob, i, chunkSize)));
+            }
+            // Round 2: same filename again -> collision-proof "(n)" names.
+            String fid2 = java.util.UUID.randomUUID().toString();
+            alice.send(SEP_F(fid2, "general", "payload.bin", blob.length, chunkCount, "alice"));
+            for (int i = 0; i < chunkCount; i++) {
+                alice.send("@FILE_CHUNK" + Protocol.SEP + fid2 + Protocol.SEP + "general" + Protocol.SEP
+                        + i + Protocol.SEP + Base64.getEncoder().encodeToString(FileReceiver.chunk(blob, i, chunkSize)));
+            }
+            check(waitForFileCount(dl, blob, 4, 8000) == 4, "two transfers x two receivers all saved (collision-proof names)");
+
+            // Host console sends a file too; bob receives it.
+            Path note = d.resolve("note.txt");
+            byte[] noteBytes = "hello notes".getBytes(StandardCharsets.UTF_8);
+            Files.write(note, noteBytes);
+            host.handleUserInput("@send " + note);
+            check(waitForFileCount(dl, noteBytes, 1, 8000) == 1, "host @send delivered to a joiner");
         } finally {
             host.close();
+        }
+
+        // Unit-level test of @cancel on FileReceiver directly.
+        Path coldl = d.resolve("cancel-dl");
+        FileReceiver rec = new FileReceiver(coldl);
+        String cfid = java.util.UUID.randomUUID().toString();
+        rec.start(cfid, "r", "big.bin", 300_000, 10, "sender");
+        rec.chunk(cfid, 0, Base64.getEncoder().encodeToString(new byte[30_000]));
+        String cancel = rec.cancelByName("big.bin");
+        check(cancel != null && cancel.contains("aborted"), "cancelByName aborts a partial transfer: " + cancel);
+        check(!Files.exists(coldl.resolve("big.bin")), "cancelled transfer never finalized");
+        long parts = Files.list(coldl).filter(x -> x.getFileName().toString().endsWith(".part")).count();
+        check(parts == 0, "no .part file left after cancel (got " + parts + ")");
+
+        String okFid = java.util.UUID.randomUUID().toString();
+        rec.start(okFid, "r", "big.bin", 300_000, 10, "sender");
+        for (int i = 0; i < 10; i++) {
+            rec.chunk(okFid, i, Base64.getEncoder().encodeToString(new byte[30_000]));
+        }
+        check(Files.isRegularFile(coldl.resolve("big.bin"))
+                && Files.size(coldl.resolve("big.bin")) == 300_000, "a fresh transfer completes after a cancel");
+    }
+
+    private static String SEP_F(String fid, String room, String name, long size, int count, String sender) {
+        return "@FILE_START" + Protocol.SEP + fid + Protocol.SEP + room + Protocol.SEP + name
+                + Protocol.SEP + size + Protocol.SEP + count + Protocol.SEP + sender + Protocol.SEP;
+    }
+
+    private static int matchingFiles(Path dir, byte[] content) {
+        try (var s = Files.list(dir)) {
+            int n = 0;
+            for (Path f : (Iterable<Path>) s::iterator) {
+                if (Files.isRegularFile(f) && !f.getFileName().toString().endsWith(".part")
+                        && java.util.Arrays.equals(Files.readAllBytes(f), content)) {
+                    n++;
+                }
+            }
+            return n;
+        } catch (IOException e) {
+            return -1;
+        }
+    }
+
+    private static int waitForFileCount(Path dir, byte[] content, int want, long ms) {
+        long end = System.currentTimeMillis() + ms;
+        int last = -1;
+        while (true) {
+            int n = matchingFiles(dir, content);
+            last = n;
+            if (want != 0 && n == want) return n;
+            if (want == 0) return n;
+            if (System.currentTimeMillis() >= end) return last;
+            try {
+                Thread.sleep(75);
+            } catch (InterruptedException e) {
+                return last;
+            }
         }
     }
 
     // 19 -----------------------------------------------------------------
 
-    private static void f19WebInterop() throws Exception {
+    private static void f19TicTacToe() throws Exception {
         Path d = dir();
-        int ws = port();
-        int http = port();
-        configure(d, "web.enabled=true", "web.port=" + ws, "web.http.port=" + http,
-                "trust.server.enabled=false", "reconnect.enabled=false");
+        configure(d, "trust.server.enabled=false");
         int p = port();
-        TrustStore store = trust(d);
-        HostNode host = new HostNode("host", p, identity(d, "host"), new TrustGate(store), YES);
-        host.start();
-        try {
-            ClientNode bob = new ClientNode("bob", "localhost", p, identity(d, "bob"), new TrustGate(store), YES);
-            bob.start();
-            Thread.sleep(300);
-            bob.handleUserInput("@join general");
-            Thread.sleep(200);
-
-            WebPeer alice = new WebPeer(ws);
-            alice.connect();
-            check(alice.await(l -> l.equals("OPEN"), 5000) != null, "web alice opens");
-            alice.send("@NAME" + Protocol.SEP + "alice");
-            alice.await(l -> l.startsWith("@SYS"), 3000);
-            alice.send("@JOIN" + Protocol.SEP + "general");
-            alice.await(l -> l.startsWith("@SYS") && l.contains("room general"), 3000);
-
-            // terminal -> web
-            bob.handleUserInput("hello from terminal");
-            check(alice.await(FROM_CONTAINS("hello from terminal"), 4000) != null,
-                    "web client receives terminal message");
-
-            // web -> terminal
+        Object[] o = roomWithPeers(d, p, "alice", "carol");
+        HostNode host = (HostNode) o[0];
+        try (Peer alice = (Peer) o[1]; Peer carol = (Peer) o[2]) {
             Capture cap = new Capture();
-            alice.send("@MSG" + Protocol.SEP + "general" + Protocol.SEP + "hello from web");
-            check(cap.waitContains("hello from web", 4000), "terminal prints web message");
-            cap.close();
+            try {
+                alice.send("@GAME" + Protocol.SEP + "ttt start");
+                check(carol.await(GAME_LINE("alice is X"), 3000) != null, "alice started as X");
 
-            // shared history
-            Capture cap2 = new Capture();
-            bob.handleUserInput("@history 20");
-            boolean hist = cap2.waitContains("hello from web", 3000)
-                    && cap2.waitContains("hello from terminal", 3000);
-            cap2.close();
-            check(hist, "terminal history shows both terminal and web messages");
+                carol.send("@GAME" + Protocol.SEP + "ttt join");
+                String joined = alice.await(GAME_LINE("alice (X) vs carol (O)"), 3000);
+                check(joined != null && joined.contains("It's alice's turn"), "carol joined as O");
+                check(cap.stripped().contains("Game started. alice (X) vs carol (O)"), "host console shows the join");
 
-            bob.close();
-            alice.close();
+                carol.send("@GAME" + Protocol.SEP + "ttt 9 9");
+                check(alice.await(GAME_LINE("Move format"), 3000) != null, "bad move coordinates rejected");
+
+                alice.send("@GAME" + Protocol.SEP + "ttt 1 1");
+                check(carol.await(GAME_LINE("It's carol's turn"), 3000) != null, "alice's opening move");
+                carol.send("@GAME" + Protocol.SEP + "ttt 1 2");
+                check(alice.await(GAME_LINE("It's alice's turn"), 3000) != null, "carol's reply");
+                alice.send("@GAME" + Protocol.SEP + "ttt 2 1");
+                check(carol.await(GAME_LINE("It's carol's turn"), 3000) != null, "alice's second move");
+                carol.send("@GAME" + Protocol.SEP + "ttt 2 2");
+                check(alice.await(GAME_LINE("It's alice's turn"), 3000) != null, "carol's second move");
+                alice.send("@GAME" + Protocol.SEP + "ttt 3 1");
+                check(carol.await(GAME_LINE("alice wins!"), 3000) != null, "alice scored a line and won");
+                check(cap.stripped().contains("alice wins!"), "host console shows the win board");
+
+                carol.send("@GAME" + Protocol.SEP + "ttt 1 1");
+                check(alice.await(GAME_LINE("Game is over"), 3000) != null, "no moves allowed after the game ends");
+
+                alice.send("@GAME" + Protocol.SEP + "ttt reset");
+                check(carol.await(GAME_LINE("Game reset"), 3000) != null, "reset restarts a round");
+            } finally {
+                cap.close();
+            }
         } finally {
             host.close();
         }
@@ -946,29 +1004,217 @@ public class FeatureSmokeTest {
 
     // 20 -----------------------------------------------------------------
 
-    private static void f20WebKick() throws Exception {
+    private static void f20WordChain() throws Exception {
         Path d = dir();
-        int ws = port();
-        int http = port();
-        configure(d, "web.enabled=true", "web.port=" + ws, "web.http.port=" + http,
-                "trust.server.enabled=false", "reconnect.enabled=false");
+        configure(d, "trust.server.enabled=false");
         int p = port();
-        HostNode host = new HostNode("host", p, identity(d, "host"), new TrustGate(trust(d)), YES);
-        host.start();
-        try {
-            WebPeer alice = new WebPeer(ws);
-            alice.connect();
-            check(alice.await(l -> l.equals("OPEN"), 5000) != null, "web alice opens");
-            alice.send("@NAME" + Protocol.SEP + "alice");
-            alice.await(l -> l.startsWith("@SYS"), 3000);
+        Object[] o = roomWithPeers(d, p, "alice", "carol");
+        HostNode host = (HostNode) o[0];
+        try (Peer alice = (Peer) o[1]; Peer carol = (Peer) o[2]) {
+            host.handleUserInput("@chain start");
+            String start = alice.await(GAME_LINE("Seed:"), 3000);
+            check(start != null, "chain seeded");
+            java.util.regex.Matcher m = java.util.regex.Pattern
+                    .compile("Seed: ([A-Za-z]+)").matcher(Protocol.split(start)[1]);
+            check(m.find(), "seed word present");
+            String seed = m.group(1).toLowerCase();
 
-            host.handleUserInput("@kick alice");
-            check(alice.await(l -> l.startsWith("@ERR") && l.contains("kicked"), 4000) != null,
-                    "web user gets @ERR on kick");
-            check(alice.await(l -> l.equals("CLOSE"), 4000) != null, "web connection closed after kick");
-            alice.close();
+            String w1 = seed.charAt(seed.length() - 1) + "oe";
+            host.handleUserInput("@chain " + w1);
+            String l1 = alice.await(GAME_LINE(w1.toUpperCase()), 3000);
+            check(l1 != null && l1.contains("host=1"), "host's word chains on (host=1)");
+
+            String wDup = "eun";
+            host.handleUserInput("@chain " + wDup);
+            check(alice.await(GAME_LINE("Wait for someone else, host"), 3000) != null,
+                    "same player twice in a row is blocked");
+
+            String w2 = "eae";
+            alice.send("@GAME" + Protocol.SEP + "chain " + w2);
+            String l2 = carol.await(GAME_LINE("EAE"), 3000);
+            check(l2 != null && l2.contains("alice=1"), "alice's word chains on (alice=1)");
+
+            carol.send("@GAME" + Protocol.SEP + "chain " + w2);
+            check(alice.await(GAME_LINE("was already used"), 3000) != null, "repeats are rejected");
+
+            String w3 = "euz";
+            carol.send("@GAME" + Protocol.SEP + "chain " + w3);
+            String l3 = alice.await(GAME_LINE("EUZ"), 3000);
+            check(l3 != null && l3.contains("carol=1"), "carol's word chains on (carol=1)");
+
+            host.handleUserInput("@chain zoe");
+            String l4 = alice.await(GAME_LINE("ZOE"), 3000);
+            check(l4 != null && l4.contains("host=2"), "host's second word (host=2)");
+
+            host.handleUserInput("@chain score");
+            check(alice.await(GAME_LINE("Chain scores"), 3000) != null, "score breaks down");
+
+            host.handleUserInput("@chain quit");
+            check(alice.await(GAME_LINE("Word chain ended."), 3000) != null, "quit ends the round");
         } finally {
             host.close();
+        }
+    }
+
+    // 21 -----------------------------------------------------------------
+
+    private static void f21Hangman() throws Exception {
+        Path d = dir();
+        configure(d, "trust.server.enabled=false");
+        int p = port();
+        Object[] o = roomWithPeers(d, p, "alice", "carol");
+        HostNode host = (HostNode) o[0];
+        try (Peer alice = (Peer) o[1]; Peer carol = (Peer) o[2]) {
+            host.handleUserInput("@hang start secret");
+            check(alice.await(GAME_LINE("Hangman started by host"), 3000) != null, "round started");
+            check(carol.await(GAME_LINE("Everyone guesses letters"), 3000) != null, "guess prompt broadcast");
+
+            host.handleUserInput("@hang s");
+            check(alice.await(GAME_LINE("You picked the word, host"), 3000) != null, "gamemaster can't guess");
+
+            alice.send("@GAME" + Protocol.SEP + "hang s");
+            check(alice.await(GAME_LINE("Good guess, alice"), 3000) != null, "correct letter revealed");
+
+            alice.send("@GAME" + Protocol.SEP + "hang x");
+            String wrong = alice.await(GAME_LINE("Wrong, alice"), 3000);
+            check(wrong != null && wrong.contains("5 wrong left"), "wrong letter tallied + counter decrements");
+
+            carol.send("@GAME" + Protocol.SEP + "hang e");
+            check(alice.await(GAME_LINE("Good guess, carol"), 3000) != null, "carol's correct letter");
+            for (char ch : new char[]{'c', 'r'}) {
+                alice.send("@GAME" + Protocol.SEP + "hang " + ch);
+                check(alice.await(GAME_LINE("Good guess, alice"), 3000) != null, "letter " + ch + " revealed");
+            }
+            alice.send("@GAME" + Protocol.SEP + "hang t");
+            check(alice.await(GAME_LINE("alice solved it! The word was SECRET"), 3000) != null, "word solved");
+
+            host.handleUserInput("@hang quit");
+            check(alice.await(GAME_LINE("Hangman ended."), 3000) != null, "round quits cleanly");
+        } finally {
+            host.close();
+        }
+    }
+
+    // 22 -----------------------------------------------------------------
+
+    private static void f22NameThat() throws Exception {
+        Path d = dir();
+        configure(d, "trust.server.enabled=false", "guess.dynamic.enabled=false");
+        int p = port();
+        Object[] o = roomWithPeers(d, p, "alice", "carol");
+        HostNode host = (HostNode) o[0];
+        try (Peer alice = (Peer) o[1]; Peer carol = (Peer) o[2]) {
+            alice.send("@GAME" + Protocol.SEP + "guess start banana");
+            check(alice.await(GAME_LINE("Category must be movie, song or game"), 3000) != null,
+                    "bad category rejected");
+
+            host.handleUserInput("@guess start movie");
+            String movieLine = alice.await(GAME_LINE("Name That MOVIE"), 3000);
+            check(movieLine != null && movieLine.contains("Hint 1:"), "movie round started with a hint");
+
+            alice.send("@GAME" + Protocol.SEP + "guess hint");
+            check(alice.await(GAME_LINE("Hint 2:"), 3000) != null, "second hint revealed");
+
+            alice.send("@GAME" + Protocol.SEP + "guess flibberflabber");
+            check(alice.await(GAME_LINE("Not that, alice"), 3000) != null, "wrong answer rejected");
+
+            alice.send("@GAME" + Protocol.SEP + "guess quit");
+            check(alice.await(GAME_LINE("The answer was:"), 3000) != null, "quit reveals the answer");
+
+            host.handleUserInput("@guess start song");
+            check(carol.await(GAME_LINE("Name That SONG"), 3000) != null, "song round started");
+            carol.send("@GAME" + Protocol.SEP + "guess hint");
+            check(carol.await(GAME_LINE("Hint 2:"), 3000) != null, "song hint 2");
+            carol.send("@GAME" + Protocol.SEP + "guess hint");
+            check(carol.await(GAME_LINE("Hint 3:"), 3000) != null, "song hint 3");
+            host.handleUserInput("@guess quit");
+            check(carol.await(GAME_LINE("The answer was:"), 3000) != null, "song round quits");
+
+            host.handleUserInput("@guess start game");
+            check(carol.await(GAME_LINE("Name That GAME"), 3000) != null, "game round started");
+            host.handleUserInput("@guess end");
+            check(carol.await(GAME_LINE("The answer was:"), 3000) != null, "game round ends");
+        } finally {
+            host.close();
+        }
+    }
+
+    // 23 -----------------------------------------------------------------
+
+    private static void f23NameThatDynamic() throws Exception {
+        String songChart = "{\"feed\":{\"results\":[{\"id\":\"358410113\",\"name\":\"Anthem\","
+                + "\"artistName\":\"Bohemian Test Band\",\"releaseDate\":\"1975-10-31\","
+                + "\"genreNames\":[\"Rock\"]}]}}";
+        String songLookup = "{\"resultCount\":1,\"results\":[{\"wrapperType\":\"track\",\"kind\":\"song\","
+                + "\"trackName\":\"Anthem\",\"artistName\":\"Bohemian Test Band\","
+                + "\"collectionName\":\"A Night at the Test Opera\","
+                + "\"releaseDate\":\"1975-10-31T07:00:00Z\",\"primaryGenreName\":\"Rock\","
+                + "\"trackTimeMillis\":354000}]}";
+        String movieChart = "{\"feed\":{\"results\":[{\"id\":\"284709018\",\"name\":\"Gravity\","
+                + "\"artistName\":\"Warner Bros.\",\"releaseDate\":\"2013-10-04\"}]}}";
+        String movieLookup = "{\"resultCount\":1,\"results\":[{\"wrapperType\":\"track\",\"kind\":\"movie\","
+                + "\"trackName\":\"Gravity\",\"releaseDate\":\"2013-10-04T07:00:00Z\","
+                + "\"primaryGenreName\":\"Sci-Fi & Fantasy\",\"trackTimeMillis\":5460000,"
+                + "\"longDescription\":\"A medical engineer and an astronaut survive after a disaster "
+                + "leaves them adrift in space.\"}]}";
+
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/api/v2/us/music/most-played/20/songs.json",
+                ex -> respond(ex, songChart));
+        server.createContext("/api/v2/us/movies/top-movies/25/movies.json",
+                ex -> respond(ex, movieChart));
+        server.createContext("/lookup", ex -> respond(ex, ex.getRequestURI().getRawQuery().contains("284709018")
+                ? movieLookup : songLookup));
+        server.start();
+        String base = "http://127.0.0.1:" + server.getAddress().getPort();
+
+        try {
+            NameThat g = new NameThat(new ItunesHintSource(base, base, Duration.ofSeconds(3)));
+
+            String songStart = g.handle("alice", "start song");
+            check(songStart.contains("Name That SONG"), "dynamic song round begins");
+            check(songStart.contains("Hint 1: Genre: Rock"), "song hint 1 uses live genre");
+            check(g.handle("alice", "hint").contains("Released in 1975"), "song hint 2 uses live year");
+            check(g.handle("alice", "hint").contains("Bohemian Test Band"), "song hint 3 uses live artist");
+            String hint4 = g.handle("alice", "hint");
+            check(hint4.contains("About 5 min") && hint4.contains("A Night at the Test Opera"),
+                    "song hint 4 album + duration");
+            check(g.handle("alice", "Anthem").contains("[Correct]"), "dynamic song answer accepted");
+
+            String movieStart = g.handle("bob", "start movie");
+            check(movieStart.contains("Name That MOVIE"), "dynamic movie round begins");
+            check(movieStart.contains("Hint 1: Genre: Sci-Fi & Fantasy"), "movie hint 1 uses live genre");
+            check(g.handle("bob", "hint").contains("Released in 2013"), "movie hint 2 uses live year");
+            check(g.handle("bob", "hint").contains("Runtime: 91 min"), "movie hint 3 runtime");
+            check(g.handle("bob", "Gravity").contains("[Correct]"), "dynamic movie answer accepted");
+
+            check(g.handle("alice", "start song").contains("Name That SONG"), "cached song round repeats");
+        } finally {
+            server.stop(0);
+        }
+
+        // Stopped server => network failure => silent built-in fallback.
+        NameThat offline = new NameThat(new ItunesHintSource(
+                "http://127.0.0.1:" + server.getAddress().getPort(),
+                "http://127.0.0.1:" + server.getAddress().getPort(),
+                Duration.ofMillis(800)));
+        String start = offline.handle("alice", "start song");
+        check(start.contains("Name That SONG") && start.contains("Hint 1:"), "offline fallback round works");
+        String quit = offline.handle("alice", "quit");
+        check(quit.startsWith("Name That round ended.") && quit.contains("The answer was: "),
+                "offline fallback reveals the built-in answer");
+
+        // Explicit empty source behaves the same (pure-stub path).
+        NameThat stub = new NameThat(cat -> Optional.empty());
+        check(stub.handle("carol", "start movie").contains("Name That MOVIE"), "empty-source round works");
+    }
+
+    private static void respond(HttpExchange ex, String body) throws IOException {
+        byte[] b = body.getBytes(StandardCharsets.UTF_8);
+        ex.getResponseHeaders().set("Content-Type", "application/json");
+        ex.sendResponseHeaders(200, b.length);
+        try (OutputStream os = ex.getResponseBody()) {
+            os.write(b);
         }
     }
 }

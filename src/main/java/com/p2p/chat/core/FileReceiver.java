@@ -73,6 +73,12 @@ public final class FileReceiver {
             if (d.received >= d.chunkCount) {
                 return complete(fid);
             }
+            int pct = (int) (d.received * 100.0 / d.chunkCount);
+            if (pct / 25 > d.lastPct / 25) {
+                d.lastPct = (pct / 25) * 25;
+                return "[File] " + d.target.getFileName() + ": " + d.lastPct
+                        + "% (" + d.received + "/" + d.chunkCount + " chunks)";
+            }
             return null;
         } catch (IOException | IllegalArgumentException e) {
             return abort(fid, e.getMessage());
@@ -92,6 +98,17 @@ public final class FileReceiver {
         }
         return "[File] Transfer of " + d.target.getFileName() + " aborted"
                 + (reason == null || reason.isEmpty() ? "" : ": " + reason);
+    }
+
+    /** Cancels an active transfer by its final filename. Returns a status line or an error line. */
+    public synchronized String cancelByName(String filename) {
+        String match = sanitize(filename);
+        for (Download d : active.values()) {
+            if (d.target.getFileName().toString().equals(match)) {
+                return abort(d.fid, "cancelled locally");
+            }
+        }
+        return "[File] No active download named '" + filename + "'";
     }
 
     /** Renames the .part file to its final name once all chunks arrived. */
@@ -205,6 +222,7 @@ public final class FileReceiver {
         final String sender;
         int received;
         long bytes;
+        int lastPct;
 
         Download(String fid, String room, Path target, Path part, OutputStream out,
                  int chunkCount, String sender) {
