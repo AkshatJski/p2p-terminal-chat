@@ -55,7 +55,8 @@ chain of peers with **no internet at all**.
    java -jar p2p-chat.jar
    ```
 3. On the **first** machine pick `H` (host). On the **second** pick `J` (join)
-   and enter the first machine's IP address.
+   and press **Enter** — it scans the network and lists the hosts it finds, so
+   you just type a number (no need to know the IP).
 4. On both machines type `@join general`, then just start typing.
 
 > Requires **JDK 21+** to run. See [Prerequisites](#prerequisites).
@@ -66,6 +67,7 @@ chain of peers with **no internet at all**.
 
 | | |
 |---|---|
+| 🔍 **Zero-config LAN discovery** | Hosts broadcast their presence over UDP multicast (`239.255.77.7:8082`); joiners press Enter at the prompt to scan and pick a host by number — no IP hunting. Disable with `discovery.enabled=false`. |
 | 🔒 **End-to-end encrypted** | X25519 key exchange, AES-256-GCM per message, HKDF-SHA256 key derivation — all from the JDK standard library, zero third-party crypto. |
 | 👥 **Group rooms** | A host relays messages to every member. `@join`, `@list`, `@users`. |
 | 🌍 **Bridge rooms across networks** | `@link <host> [port]` merges two hosts' rooms into one shared room. |
@@ -134,7 +136,7 @@ docker run -it p2p-chat
 git clone https://github.com/AkshatJski/p2p-terminal-chat.git
 cd p2p-terminal-chat
 ./mvnw package -q -DskipTests          # Windows: mvnw.cmd package -q -DskipTests
-java -jar target/java-p2p-terminal-chat-1.0-SNAPSHOT.jar
+java -jar target/java-p2p-terminal-chat-1.1.0.jar
 ```
 
 ### Option D — One-command setup script
@@ -172,9 +174,14 @@ You'll see:
 Your name: Alice
 Do you want to (H)ost a room or (J)oin a host? H
 [System] Listening on TCP port 8080
+[System] Others can join you at:
+  192.168.1.42:8080  (Wi-Fi)
+  Invite a peer with:  JOIN 8080 at an address above  (their TOFU check should show a device ID of 74EF3635-02D500FE)
+[System] Broadcasting presence on 239.255.77.7:8082 — peers can press Enter at the join prompt to find you.
 ```
 
-Alice's machine is now listening on port **8080**.
+Alice's machine is now listening on port **8080** and announcing itself on the
+LAN so Bob can find it without being told the IP.
 
 **Step 2 — Join from the peer (Bob's machine)**
 
@@ -182,11 +189,21 @@ Alice's machine is now listening on port **8080**.
 java -jar p2p-chat.jar
 ```
 
+Bob just presses **Enter** when asked for a host:
+
 ```
 Your name: Bob
 Do you want to (H)ost a room or (J)oin a host? J
-Host IP: 192.168.1.42
+Join a host — type its IP or hostname, or press Enter to scan this network.
+Host (or Enter to scan):
+[Discovery] Scanning for hosts on 239.255.77.7:8082 ...
+  [1] Alice  (74EF3635-02D500FE)  192.168.1.42:8080
+1
+[System] Joining Alice at 192.168.1.42:8080 ...
 ```
+
+If scanning finds nothing (firewall, AP isolation, different VLAN), just type
+Alice's IP — or `192.168.1.42:9090` if she runs a custom port.
 
 **Step 3 — Verify each other's fingerprint**
 
@@ -231,8 +248,13 @@ winget install tailscale.tailscale
 brew install tailscale
 ```
 
-Then join using the host's Tailscale IP (`tailscale ip -4`). No port
-forwarding, no firewall holes.
+Then join using the host's Tailscale IP (`tailscale ip -4`), **or** its MagicDNS
+name (`<hostname>.<tailnet>.ts.net`) — the app tells you when it detects a
+Tailscale interface. No port forwarding, no firewall holes.
+
+> Note: LAN discovery uses multicast, which Tailscale does **not** relay across
+> your tailnet. Over Tailscale, join by IP hostname as above instead of
+> pressing Enter to scan.
 
 ### Port forwarding
 
@@ -339,12 +361,12 @@ behavior, hint sources, trust server, …): **[CONFIGURATION.md](CONFIGURATION.m
 ```
 
 This produces a single shaded jar at
-`target/java-p2p-terminal-chat-1.0-SNAPSHOT.jar`.
+`target/java-p2p-terminal-chat-1.1.0.jar`.
 
 ### Run from source
 
 ```bash
-./mvnw package -q -DskipTests && java -jar target/java-p2p-terminal-chat-1.0-SNAPSHOT.jar
+./mvnw package -q -DskipTests && java -jar target/java-p2p-terminal-chat-1.1.0.jar
 ```
 
 ### Tests
@@ -360,8 +382,8 @@ relay, files + progress + cancel, trust, history, moderation, auto-reconnect,
 bridging, mesh flooding, all four games, dynamic hints + fallback):
 
 ```bash
-javac -cp target/java-p2p-terminal-chat-1.0-SNAPSHOT.jar -d tool-out tool/FeatureSmokeTest.java
-java  -cp "tool-out;target/java-p2p-terminal-chat-1.0-SNAPSHOT.jar" FeatureSmokeTest
+javac -cp target/java-p2p-terminal-chat-1.1.0.jar -d tool-out tool/FeatureSmokeTest.java
+java  -cp "tool-out;target/java-p2p-terminal-chat-1.1.0.jar" FeatureSmokeTest
 ```
 
 Exit code `0` means everything passed.
@@ -435,6 +457,13 @@ First, check both machines can ping each other. Then verify you're on the same
 LAN/subnet. On Windows, allow Java through the firewall for private networks.
 Over the internet, use Tailscale or port forwarding (see
 [above](#connecting-over-the-internet)).
+
+**Pressing Enter to scan finds no hosts.**
+Multicast isn't forwarded between VLANs, by access-point client isolation, or
+by some firewalls. Join by typing the host's IP instead (it still works), or
+on Windows allow Java through the firewall for your network type. Both sides
+must use the same `discovery.port` (default `8082`) and the same `port` for the
+chat itself.
 
 **The fingerprint changed and the app won't connect.**
 The host's identity key or `trusted.txt` was replaced/deleted. Confirm with the

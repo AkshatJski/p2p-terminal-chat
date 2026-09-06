@@ -19,7 +19,7 @@ SET "BUILD_ONLY=0"
 IF "%~1"=="--build" SET "BUILD_ONLY=1"
 
 SET "SCRIPT_DIR=%~dp0"
-SET "JAR_NAME=java-p2p-terminal-chat-1.0-SNAPSHOT.jar"
+SET "JAR_NAME=java-p2p-terminal-chat-1.1.0.jar"
 
 REM ---- Check Java ----
 WHERE java >NUL 2>NUL

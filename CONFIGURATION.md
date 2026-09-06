@@ -64,6 +64,10 @@ If none exists, defaults are used and the app prints
 | `guess.dynamic.enabled` | `true`                            | Fetch live keyless hints (iTunes/Apple charts) for `@guess movie|song`; `false` forces the built-in packs |
 | `guess.dynamic.timeout.ms` | `2500`                          | Per-request timeout for the dynamic hint fetch (500–15000 ms) |
 | `guess.dynamic.base.url` | *(empty)*                          | Override both dynamic-endpoint hosts (self-hosted mirror / tests); empty = default Apple hosts |
+| `discovery.enabled`    | `true`                               | Hosts broadcast their presence and joiners scan the LAN for them; set `false` to require a manual IP |
+| `discovery.port`       | `8082`                               | UDP port for beacon discovery (group `239.255.77.7`); must match across machines |
+| `discovery.interval.ms` | `2000`                              | How often the host re-broadcasts its beacon (ms) |
+| `discovery.scan.ms`    | `3000`                               | How long a joiner listens for beacons once (ms) |
 
 Path values may use `${user.home}` for a home-relative path. Range-checks
 (e.g. port 1-65535) fall back to the default with a warning.

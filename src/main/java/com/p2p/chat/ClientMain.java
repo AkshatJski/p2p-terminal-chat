@@ -9,6 +9,10 @@ import com.p2p.chat.core.TrustGate;
 import com.p2p.chat.crypto.CryptoUtil;
 import com.p2p.chat.crypto.Identity;
 import com.p2p.chat.crypto.TrustStore;
+import com.p2p.chat.discovery.Discovery;
+import com.p2p.chat.discovery.DiscoveryAnnouncer;
+import com.p2p.chat.discovery.DiscoveryRecord;
+import com.p2p.chat.discovery.DiscoveryScanner;
 import com.p2p.chat.util.Ansi;
 import java.net.ConnectException;
 import java.net.BindException;
@@ -16,6 +20,7 @@ import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.util.Enumeration;
+import java.util.List;
 import java.util.Scanner;
 
 /**
@@ -43,9 +48,9 @@ public class ClientMain {
                 return answer.equals("y") || answer.equals("yes");
             };
 
+            String deviceId = CryptoUtil.fingerprint(identity.rawPublicKey(), identity.rawPublicKey());
             System.out.println(Ansi.bold(Ansi.BRIGHT_CYAN, "****** P2P Chat (ECDH + AES-GCM) ******"));
-            System.out.println(Ansi.color(Ansi.CYAN, "[Security] Your device ID: "
-                    + CryptoUtil.fingerprint(identity.rawPublicKey(), identity.rawPublicKey())));
+            System.out.println(Ansi.color(Ansi.CYAN, "[Security] Your device ID: " + deviceId));
             System.out.print("Your name: ");
             String name = in.nextLine().trim();
             if (name.isEmpty()) {
@@ -57,26 +62,14 @@ public class ClientMain {
             if (choice.startsWith("H")) {
                 node = new HostNode(name, config.getPort(), identity, trustGate, prompt);
                 node.start();
-                printLocalAddresses(config.getPort());
+                printLocalAddresses(config.getPort(), deviceId);
+                startHostDiscovery(config, name, deviceId);
             } else if (choice.startsWith("J")) {
-                System.out.print("Host IP (or host:port) [localhost]: ");
-                String input = in.nextLine().trim();
-                String host;
-                int port;
-                if (input.contains(":")) {
-                    String[] parts = input.split(":", 2);
-                    host = parts[0];
-                    try {
-                        port = Integer.parseInt(parts[1]);
-                    } catch (NumberFormatException e) {
-                        System.out.println(Ansi.color(Ansi.RED, "[Error] Invalid port in " + input));
-                        return;
-                    }
-                } else {
-                    host = input.isEmpty() ? "localhost" : input;
-                    port = config.getPort();
+                String[] target = askJoinTarget(in, config);
+                if (target == null) {
+                    return;
                 }
-                node = new ClientNode(name, host, port, identity, trustGate, prompt);
+                node = new ClientNode(name, target[0], Integer.parseInt(target[1]), identity, trustGate, prompt);
                 node.start();
             } else {
                 System.out.println(Ansi.color(Ansi.RED, "[System] Invalid choice. Run again and pick H or J."));
@@ -113,15 +106,19 @@ public class ClientMain {
         }
     }
 
-    private static void printLocalAddresses(int port) {
+    private static void printLocalAddresses(int port, String deviceId) {
         try {
             System.out.println(Ansi.color(Ansi.BRIGHT_GREEN, "[System] Others can join you at:"));
             boolean found = false;
+            boolean onTailscale = false;
             Enumeration<NetworkInterface> nets = NetworkInterface.getNetworkInterfaces();
             while (nets.hasMoreElements()) {
                 NetworkInterface ni = nets.nextElement();
                 if (ni.isLoopback() || !ni.isUp()) {
                     continue;
+                }
+                if (isTailscaleNetwork(ni)) {
+                    onTailscale = true;
                 }
                 Enumeration<InetAddress> addrs = ni.getInetAddresses();
                 while (addrs.hasMoreElements()) {
@@ -135,11 +132,102 @@ public class ClientMain {
                     found = true;
                 }
             }
-            if (!found) {
+            if (found) {
+                System.out.println(Ansi.color(Ansi.DIM, "  Invite a peer with:  JOIN " + port
+                        + " at an address above  (their TOFU check should show a device ID of " + deviceId + ")"));
+            } else {
                 System.out.println(Ansi.color(Ansi.BRIGHT_GREEN, "  localhost:" + port + "  (local only)"));
+            }
+            if (onTailscale) {
+                System.out.println(Ansi.color(Ansi.DIM, "[Tailscale] Peers on your tailnet can join with your MagicDNS name "
+                        + "(<hostname>.<tailnet>.ts.net) instead of an IP."));
             }
         } catch (SocketException e) {
             System.out.println(Ansi.color(Ansi.DIM, "  (could not enumerate network interfaces)"));
         }
+    }
+
+    private static boolean isTailscaleNetwork(NetworkInterface ni) {
+        String label = ((ni.getDisplayName() == null ? "" : ni.getDisplayName())
+                + "|" + (ni.getName() == null ? "" : ni.getName())).toLowerCase();
+        if (label.contains("tailscale")) {
+            return true;
+        }
+        Enumeration<InetAddress> addrs = ni.getInetAddresses();
+        while (addrs.hasMoreElements()) {
+            byte[] b = addrs.nextElement().getAddress();
+            if (b != null && b.length == 4 && (b[0] & 0xFF) == 100 && (b[1] & 0xFF) >= 64 && (b[1] & 0xFF) <= 127) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void startHostDiscovery(Config config, String name, String deviceId) {
+        if (!config.isDiscoveryEnabled()) {
+            return;
+        }
+        DiscoveryAnnouncer announcer = new DiscoveryAnnouncer(name, deviceId, config.getPort(),
+                config.getDiscoveryPort(), config.getDiscoveryIntervalMs());
+        announcer.start();
+        System.out.println(Ansi.color(Ansi.DIM, "[System] Broadcasting presence on " + Discovery.GROUP
+                + ":" + config.getDiscoveryPort() + " — peers can press Enter at the join prompt to find you."));
+    }
+
+    private static String[] askJoinTarget(Scanner in, Config config) {
+        while (true) {
+            System.out.println(Ansi.color(Ansi.DIM,
+                    "Join a host — type its IP or hostname, or press Enter to scan this network."));
+            System.out.print("Host (or Enter to scan): ");
+            String input = in.nextLine().trim();
+            if (!input.isEmpty()) {
+                return validTarget(input, config.getPort());
+            }
+            if (!config.isDiscoveryEnabled()) {
+                System.out.println(Ansi.color(Ansi.YELLOW, "[Discovery] Disabled — please type the host IP or hostname."));
+                continue;
+            }
+            System.out.println(Ansi.color(Ansi.DIM, "[Discovery] Scanning for hosts on " + Discovery.GROUP
+                    + ":" + config.getDiscoveryPort() + " ..."));
+            List<DiscoveryRecord> hosts = DiscoveryScanner.scan(config.getDiscoveryPort(),
+                    (int) config.getDiscoveryScanMs());
+            if (hosts.isEmpty()) {
+                System.out.println(Ansi.color(Ansi.YELLOW, "[Discovery] No hosts found on this network."));
+                continue;
+            }
+            for (int i = 0; i < hosts.size(); i++) {
+                System.out.println(Ansi.color(Ansi.BRIGHT_GREEN, "  [" + (i + 1) + "] " + hosts.get(i)));
+            }
+            String pick = in.nextLine().trim();
+            if (!pick.isEmpty()) {
+                try {
+                    int idx = Integer.parseInt(pick);
+                    if (idx >= 1 && idx <= hosts.size()) {
+                        DiscoveryRecord h = hosts.get(idx - 1);
+                        System.out.println(Ansi.color(Ansi.DIM, "[System] Joining " + h.name() + " at "
+                                + h.address().getHostAddress() + ":" + h.port() + " ..."));
+                        return new String[]{h.address().getHostAddress(), String.valueOf(h.port())};
+                    }
+                } catch (NumberFormatException ignored) {
+                }
+                String[] target = validTarget(pick, config.getPort());
+                if (target != null) {
+                    return target;
+                }
+            }
+            System.out.println(Ansi.color(Ansi.RED, "[Error] Invalid choice. Try again."));
+        }
+    }
+
+    private static String[] validTarget(String input, int defaultPort) {
+        if (input.contains(":")) {
+            String[] parts = input.split(":", 2);
+            try {
+                return new String[]{parts[0], String.valueOf(Integer.parseInt(parts[1]))};
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+        return new String[]{input, String.valueOf(defaultPort)};
     }
 }

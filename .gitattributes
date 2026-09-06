@@ -1,0 +1,11 @@
+# Keep POSIX/container files LF even when core.autocrlf is enabled on Windows.
+mvnw            text eol=lf
+mvnw.cmd        text eol=crlf
+setup.sh        text eol=lf
+setup.bat       text eol=crlf
+Dockerfile      text eol=lf
+.gitattributes  text eol=lf
+.mvn/wrapper/maven-wrapper.properties text eol=lf
+
+# Everything else stays text with autocrlf's default behavior.
+* text=auto

@@ -26,7 +26,7 @@ BUILD_ONLY=false
 [ "${1-}" = "--build" ] && BUILD_ONLY=true
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-JAR_NAME="java-p2p-terminal-chat-1.0-SNAPSHOT.jar"
+JAR_NAME="java-p2p-terminal-chat-1.1.0.jar"
 
 # ---- Check Java ----
 if ! command -v java &>/dev/null; then

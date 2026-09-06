@@ -43,6 +43,10 @@ public final class Config {
     public static final String KEY_GUESS_DYNAMIC_ENABLED = "guess.dynamic.enabled";
     public static final String KEY_GUESS_DYNAMIC_TIMEOUT_MS = "guess.dynamic.timeout.ms";
     public static final String KEY_GUESS_DYNAMIC_BASE_URL = "guess.dynamic.base.url";
+    public static final String KEY_DISCOVERY_ENABLED = "discovery.enabled";
+    public static final String KEY_DISCOVERY_PORT = "discovery.port";
+    public static final String KEY_DISCOVERY_INTERVAL_MS = "discovery.interval.ms";
+    public static final String KEY_DISCOVERY_SCAN_MS = "discovery.scan.ms";
 
     // Built-in defaults.
     public static final int DEFAULT_PORT = 8080;
@@ -58,6 +62,10 @@ public final class Config {
     public static final int DEFAULT_TRUST_SERVER_PORT = 0; // auto-pick
     public static final boolean DEFAULT_GUESS_DYNAMIC_ENABLED = true;
     public static final int DEFAULT_GUESS_DYNAMIC_TIMEOUT_MS = 2_500;
+    public static final boolean DEFAULT_DISCOVERY_ENABLED = true;
+    public static final int DEFAULT_DISCOVERY_PORT = 8082;
+    public static final long DEFAULT_DISCOVERY_INTERVAL_MS = 2_000;
+    public static final long DEFAULT_DISCOVERY_SCAN_MS = 3_000;
 
     public static final Path DEFAULT_DIR = Path.of(System.getProperty("user.home"), ".p2p-chat");
     public static final Path DEFAULT_CONFIG_FILE = DEFAULT_DIR.resolve("config.properties");
@@ -251,6 +259,26 @@ public final class Config {
     public String getGuessDynamicBaseUrl() {
         String v = props.getProperty(KEY_GUESS_DYNAMIC_BASE_URL);
         return v == null ? "" : v.trim();
+    }
+
+    /** Whether hosts announce themselves (and joiners scan) on the LAN. */
+    public boolean isDiscoveryEnabled() {
+        return getBool(KEY_DISCOVERY_ENABLED, DEFAULT_DISCOVERY_ENABLED);
+    }
+
+    /** UDP port used for LAN beacon discovery. */
+    public int getDiscoveryPort() {
+        return bounded(KEY_DISCOVERY_PORT, DEFAULT_DISCOVERY_PORT, 1, 65535);
+    }
+
+    /** Milliseconds between host beacon broadcasts. */
+    public long getDiscoveryIntervalMs() {
+        return getLong(KEY_DISCOVERY_INTERVAL_MS, DEFAULT_DISCOVERY_INTERVAL_MS);
+    }
+
+    /** How long a joiner listens for beacons before giving up, in milliseconds. */
+    public long getDiscoveryScanMs() {
+        return getLong(KEY_DISCOVERY_SCAN_MS, DEFAULT_DISCOVERY_SCAN_MS);
     }
 
     /** The config file that was used, or the default path when none existed. */
