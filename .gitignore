@@ -25,6 +25,7 @@ tool-out/
 
 # Learning documentation (local-only, not pushed)
 learn.docs
+learn.md
 # Full technical deep-dive (local-only; README.md on GitHub is the short one)
 /TECHNICAL-GUIDE.md
 # Office temp files for the local docs
