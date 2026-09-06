@@ -12,30 +12,43 @@ WiFi at all (multi-hop mesh).
      └── mesh mode: relays hop-by-hop through peers ──► Carol
 ```
 
-## Features
-
-- **End-to-end encrypted** — X25519 (ECDH) key exchange, AES-256-GCM per message, HKDF-SHA256 key derivation. All cryptography is from the JDK standard library.
-- **Group rooms** — hosts relay `@MSG` to every member; `@join`, `@list`, `@users`.
-- **Rooms across networks** — `@link <host> [port]` bridges hosts; the same room name becomes one shared room (`alice@A6B5F2AC`).
-- **File sharing** — `@send <path>` sends any file/media by its path to everyone in the room (saved to `./downloads`). Live receive progress, `@cancel <file>` to abort a transfer, and collision-proof names (`avatar (1).png`) when the same name arrives twice.
-- **Terminal games** — play Tic-Tac-Toe (`@ttt`), Word Chain (`@chain`), Hangman (`@hang`), or Name That (`@guess`) with anyone in your room, right from the chat line. Name That's movie/song rounds use **live keyless hints** (iTunes/Apple charts) when online and fall back to curated offline packs on any failure.
-- **Moderation** — host `@kick`, `@ban`, `@unban`.
-- **Message history** — `@history [n]` replays recent in-room messages.
-- **Auto-reconnect** — exponential backoff (1s → 30s cap), rejoins your last room.
-- **Multi-hop mesh** — flooding with TTL + dedup; chat works over TCP links when there's no WiFi.
-- **Trust-on-first-use (TOFU)** — fingerprints verified out-of-band, saved, checked on every reconnect; a changed key aborts the connection.
-- **Single-file distribution** — one runnable shaded jar; copy it to other machines.
-
 ## Quick start
 
-Prerequisites: **JDK 26** and **Maven 3.9+** (or just open it in IntelliJ IDEA).
+Pick **one** of these to get running:
 
+**Option A — Download the jar (easiest, no build, JDK 21+ only)**
+Grab the latest `.jar` from [GitHub Releases](../../releases/latest), then:
 ```bash
-mvn clean package
+java -jar p2p-chat.jar
 ```
 
-This produces `target/java-p2p-terminal-chat-1.0-SNAPSHOT.jar` — a single,
-runnable jar with everything bundled.
+**Option B — Docker (no Java install needed at all)**
+```bash
+docker build -t p2p-chat .
+docker run -it p2p-chat
+```
+
+**Option C — Clone and run (Maven wrapper included, no Maven install needed)**
+> **Requires JDK 26** (this is what the build targets). Install it from
+> [Adoptium](https://adoptium.net) ∣ `winget install EclipseAdoptium.Temurin.26.JDK` ∣ `brew install openjdk@26`
+```bash
+git clone https://github.com/AkshatJski/p2p-terminal-chat.git
+cd p2p-terminal-chat
+./mvnw package -q -DskipTests
+java -jar target/java-p2p-terminal-chat-1.0-SNAPSHOT.jar
+```
+On Windows use `mvnw.cmd` instead of `./mvnw`.
+
+**Option D — One-command setup script**
+```bash
+# macOS / Linux
+curl -sO https://raw.githubusercontent.com/AkshatJski/p2p-terminal-chat/main/setup.sh
+bash setup.sh
+
+# Windows (PowerShell)
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/AkshatJski/p2p-terminal-chat/main/setup.bat" -OutFile setup.bat
+.\setup.bat
+```
 
 ### Chat on the same WiFi/LAN
 
@@ -54,6 +67,20 @@ Enter your name, choose **J** (join), type Alice's IP (e.g. `192.168.1.42`).
 **Both:** on first contact each side displays a fingerprint
 (e.g. `74EF3635-02D500FE`) — compare it out-of-band, then type `yes`.
 Now `@join general` on both sides and start typing.
+
+## Features
+
+- **End-to-end encrypted** — X25519 (ECDH) key exchange, AES-256-GCM per message, HKDF-SHA256 key derivation. All cryptography is from the JDK standard library.
+- **Group rooms** — hosts relay `@MSG` to every member; `@join`, `@list`, `@users`.
+- **Rooms across networks** — `@link <host> [port]` bridges hosts; the same room name becomes one shared room (`alice@A6B5F2AC`).
+- **File sharing** — `@send <path>` sends any file/media by its path to everyone in the room (saved to `./downloads`). Live receive progress, `@cancel <file>` to abort a transfer, and collision-proof names (`avatar (1).png`) when the same name arrives twice.
+- **Terminal games** — play Tic-Tac-Toe (`@ttt`), Word Chain (`@chain`), Hangman (`@hang`), or Name That (`@guess`) with anyone in your room, right from the chat line. Name That's movie/song rounds use **live keyless hints** (iTunes/Apple charts) when online and fall back to curated offline packs on any failure.
+- **Moderation** — host `@kick`, `@ban`, `@unban`.
+- **Message history** — `@history [n]` replays recent in-room messages.
+- **Auto-reconnect** — exponential backoff (1s → 30s cap), rejoins your last room.
+- **Multi-hop mesh** — flooding with TTL + dedup; chat works over TCP links when there's no WiFi.
+- **Trust-on-first-use (TOFU)** — fingerprints verified out-of-band, saved, checked on every reconnect; a changed key aborts the connection.
+- **Single-file distribution** — one runnable shaded jar; copy it to other machines.
 
 ### Across the internet (recommended: Tailscale)
 
@@ -107,11 +134,12 @@ java  -cp "tool-out;target/java-p2p-terminal-chat-1.0-SNAPSHOT.jar" FeatureSmoke
 
 Exit code 0 = all tests passed.
 
-Unit tests for the game logic run under JUnit 5 during the build (`mvn test`):
+Unit tests for the game logic run under JUnit 5 during the build:
 
 ```bash
-mvn test
+./mvnw test
 ```
+(Windows: `mvnw.cmd test`)
 
 ## What's next (roadmap & ideas)
 
