@@ -1,26 +1,44 @@
 package com.p2p.chat.discovery;
 
 import java.io.IOException;
-import java.net.DatagramPacket;
+import java.io.UncheckedIOException;
 import java.net.InetAddress;
-import java.net.MulticastSocket;
+import java.net.InetSocketAddress;
+import java.net.NetworkInterface;
+import java.nio.ByteBuffer;
+import java.nio.channels.DatagramChannel;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 /**
  * A background thread that periodically broadcasts this host's presence onto
  * the discovery multicast group, so peers on the same network can find it
  * without being told an IP.
  *
- * <p>Best-effort by design: if the network can't carry multicast the sender
- * simply stays quiet and manual IP joining still works.
+ * <p>Beacons are sent out of <em>every</em> multicast-capable interface (one
+ * {@link DatagramChannel} each, pinned with {@code IP_MULTICAST_IF}), which
+ * fixes macOS hosts whose default egress would otherwise land on a virtual
+ * Tailscale/utun device. A failed send drops just that interface.
+ *
+ * <p>Best-effort by design: if the network cannot carry multicast the sender
+ * simply stays quiet and manual IP joining (or Tailscale) still works.
  */
 public final class DiscoveryAnnouncer implements Runnable, AutoCloseable {
     private final InetAddress group;
     private final int port;
-    private final String beacon;
+    private final byte[] beacon;
     private final long intervalMs;
+    private final String forcedInterface;
+    private final Consumer<String> status;
+    private final InetSocketAddress target;
+    private final Map<String, DatagramChannel> channels = new ConcurrentHashMap<>();
+
     private volatile boolean running = true;
-    private MulticastSocket socket;
+    private volatile String activeIface = "";
     private Thread thread;
 
     public static DiscoveryAnnouncer forPort(String username, String deviceId, int tcpPort) {
@@ -32,10 +50,18 @@ public final class DiscoveryAnnouncer implements Runnable, AutoCloseable {
     }
 
     public DiscoveryAnnouncer(String username, String deviceId, int tcpPort, int discoveryPort, long intervalMs) {
+        this(username, deviceId, tcpPort, discoveryPort, intervalMs, "", null);
+    }
+
+    public DiscoveryAnnouncer(String username, String deviceId, int tcpPort, int discoveryPort,
+                              long intervalMs, String forcedInterface, Consumer<String> status) {
         this.group = multicastGroup();
         this.port = discoveryPort;
-        this.beacon = Discovery.encode(username, deviceId, tcpPort);
+        this.beacon = Discovery.encode(username, deviceId, tcpPort).getBytes(StandardCharsets.UTF_8);
         this.intervalMs = Math.max(100, intervalMs);
+        this.forcedInterface = forcedInterface;
+        this.status = status;
+        this.target = new InetSocketAddress(group, port);
     }
 
     /** Starts broadcasting in the background. */
@@ -50,36 +76,89 @@ public final class DiscoveryAnnouncer implements Runnable, AutoCloseable {
 
     @Override
     public void run() {
-        try (MulticastSocket ms = new MulticastSocket()) {
-            ms.setTimeToLive(1);
-            this.socket = ms;
-            byte[] bytes = beacon.getBytes(StandardCharsets.UTF_8);
-            DatagramPacket packet = new DatagramPacket(bytes, bytes.length, group, port);
-            while (running) {
-                try {
-                    ms.send(packet);
-                } catch (IOException ignored) {
-                    // Network dropped the packet (AP isolation, firewall, ...) — keep trying.
-                }
-                try {
-                    Thread.sleep(intervalMs);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
+        List<NetworkInterface> ifaces = DiscoveryNetworks.candidates(forcedInterface);
+        if (ifaces.isEmpty()) {
+            notify("No multicast-capable interface on this host — peers won't see you automatically.");
+            notify(" Tell a peer one of the JOIN lines above, or connect them over Tailscale.");
+            return;
+        }
+        notify("Beaconing on " + Discovery.GROUP + ":" + port + " via "
+                + ifaces.stream().map(DiscoveryAnnouncer::label).collect(Collectors.joining(", ")));
+        boolean lastOk = true;
+        while (running) {
+            boolean any = false;
+            for (NetworkInterface iface : ifaces) {
+                if (!running) {
                     break;
                 }
+                if (send(iface)) {
+                    activeIface = label(iface);
+                    any = true;
+                }
             }
-        } catch (IOException e) {
-            // Cannot open a multicast socket at all — discovery silently unavailable.
+            if (!any && lastOk && running) {
+                notify("All beacon sends failed — multicast looks blocked; peers can still join with a manual IP.");
+            }
+            lastOk = any;
+            try {
+                Thread.sleep(intervalMs);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
         }
+    }
+
+    private boolean send(NetworkInterface iface) {
+        try {
+            DatagramChannel ch = channels.computeIfAbsent(iface.getName(), k -> sender(iface));
+            ch.send(ByteBuffer.wrap(beacon), target);
+            return true;
+        } catch (IOException | UncheckedIOException e) {
+            DatagramChannel closed = channels.remove(iface.getName());
+            if (closed != null) {
+                try {
+                    closed.close();
+                } catch (IOException ignored) {
+                }
+            }
+            return false;
+        }
+    }
+
+    private static DatagramChannel sender(NetworkInterface iface) {
+        try {
+            return DiscoverySocket.openSender(iface, 1);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /** Bonus field reporters read to know which interface we are currently beaconing on. */
+    public String activeInterface() {
+        return activeIface;
     }
 
     @Override
     public void close() {
         running = false;
-        MulticastSocket sock = socket;
-        if (sock != null) {
-            sock.close();
+        for (DatagramChannel ch : channels.values()) {
+            try {
+                ch.close();
+            } catch (IOException ignored) {
+            }
         }
+        channels.clear();
+    }
+
+    private void notify(String msg) {
+        if (status != null) {
+            status.accept(msg);
+        }
+    }
+
+    private static String label(NetworkInterface ni) {
+        return ni.getDisplayName() != null ? ni.getDisplayName() : ni.getName();
     }
 
     private static InetAddress multicastGroup() {
