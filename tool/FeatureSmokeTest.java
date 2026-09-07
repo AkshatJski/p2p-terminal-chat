@@ -298,6 +298,7 @@ public class FeatureSmokeTest {
         feature("23 Game: Name That dynamic source + fallback", FeatureSmokeTest::f23NameThatDynamic);
         feature("24 Discovery: multicast announcer + scanner", FeatureSmokeTest::f24Discovery);
         feature("25 Discovery: Tailscale status parse + merged join picker", FeatureSmokeTest::f25DiscoveryTailscale);
+        feature("26 Join: failed connect is caught (retry rather than exit)", FeatureSmokeTest::f26JoinConnectFailure);
 
         System.out.println("\n===== SUMMARY =====");
         System.out.println("PASSED: " + passed + "  FAILED: " + failed);
@@ -1317,6 +1318,44 @@ public class FeatureSmokeTest {
             check(true, "announcer started against '" + forced + "' without error");
         } finally {
             ann.close();
+        }
+    }
+
+    // 26 -----------------------------------------------------------------
+
+    private static void f26JoinConnectFailure() throws Exception {
+        Path d = dir();
+        int deadPort;
+        try (java.net.ServerSocket ss = new java.net.ServerSocket(0)) {
+            deadPort = ss.getLocalPort();
+        }
+        check(!isListening(deadPort), "ephemeral port is free before the test");
+
+        // Raw socket: refused local connection must fail fast with ConnectException.
+        try (Socket s = new Socket()) {
+            s.connect(new InetSocketAddress("localhost", deadPort), 500);
+            check(false, "connect to a dead local port should have failed");
+        } catch (java.net.ConnectException e) {
+            check(true, "refused local connection surfaces as ConnectException");
+        }
+
+        // The join path in ClientMain wraps ClientNode construction in a catch(IOException);
+        // this guards the contract that a failed initial connect is exactly that.
+        try {
+            new ClientNode("x", "localhost", deadPort, identity(d, "x"),
+                    new TrustGate(trust(d)), YES, 500);
+            check(false, "ClientNode to a dead port should throw IOException");
+        } catch (java.io.IOException e) {
+            check(true, "ClientNode connect failure is an IOException the retry loop catches");
+        }
+    }
+
+    private static boolean isListening(int port) {
+        try (Socket s = new Socket()) {
+            s.connect(new InetSocketAddress("localhost", port), 300);
+            return true;
+        } catch (java.io.IOException e) {
+            return false;
         }
     }
 }
