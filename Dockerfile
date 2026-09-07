@@ -27,6 +27,6 @@ WORKDIR /app
 ENV TERM=xterm-256color
 
 # Copy the runnable jar from the build stage
-COPY --from=build /app/target/java-p2p-terminal-chat-1.1.0.jar ./p2p-chat.jar
+COPY --from=build /app/target/java-p2p-terminal-chat-1.2.0.jar ./p2p-chat.jar
 
 ENTRYPOINT ["java", "-jar", "p2p-chat.jar"]

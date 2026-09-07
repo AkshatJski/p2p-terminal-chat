@@ -68,6 +68,9 @@ If none exists, defaults are used and the app prints
 | `discovery.port`       | `8082`                               | UDP port for beacon discovery (group `239.255.77.7`); must match across machines |
 | `discovery.interval.ms` | `2000`                              | How often the host re-broadcasts its beacon (ms) |
 | `discovery.scan.ms`    | `3000`                               | How long a joiner listens for beacons once (ms) |
+| `discovery.interface`  | *(empty)*                            | Force beacons/scans onto one interface (e.g. `en0` or `Wi-Fi`); empty = auto-pick. Fixes macOS machines whose multicast goes out a virtual NIC (Tailscale/utun) |
+| `discovery.tailscale.enabled` | `true`                        | Join prompt also lists online hosts from your Tailscale tailnet (uses `tailscale status --json`); `false` disables |
+| `discovery.tailscale.bin` | *(empty)*                           | Path to the `tailscale` CLI; empty = auto-detect (PATH, then the standard install locations) |
 
 Path values may use `${user.home}` for a home-relative path. Range-checks
 (e.g. port 1-65535) fall back to the default with a warning.

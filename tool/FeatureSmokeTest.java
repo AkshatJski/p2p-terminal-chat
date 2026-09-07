@@ -9,8 +9,11 @@ import com.p2p.chat.crypto.Identity;
 import com.p2p.chat.crypto.SecureChannel;
 import com.p2p.chat.crypto.TrustStore;
 import com.p2p.chat.discovery.DiscoveryAnnouncer;
+import com.p2p.chat.discovery.DiscoveryNetworks;
 import com.p2p.chat.discovery.DiscoveryRecord;
 import com.p2p.chat.discovery.DiscoveryScanner;
+import com.p2p.chat.discovery.JoinPicker;
+import com.p2p.chat.discovery.TailscaleStatus;
 import com.p2p.chat.game.NameThat;
 import com.p2p.chat.game.guess.HintSource;
 import com.p2p.chat.game.guess.ItunesHintSource;
@@ -25,7 +28,9 @@ import java.security.GeneralSecurityException;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.NetworkInterface;
 import java.net.Socket;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -46,8 +51,8 @@ import java.util.function.Predicate;
 /**
  * Per-feature smoke harness. Compile against the shaded jar and run:
  *
- *   javac -cp target/java-p2p-terminal-chat-1.1.0.jar -d tool-out tool/FeatureSmokeTest.java
- *   java  -cp tool-out;target/java-p2p-terminal-chat-1.1.0.jar FeatureSmokeTest
+ *   javac -cp target/java-p2p-terminal-chat-1.2.0.jar -d tool-out tool/FeatureSmokeTest.java
+ *   java  -cp tool-out;target/java-p2p-terminal-chat-1.2.0.jar FeatureSmokeTest
  *
  * Each numbered test exercises ONE feature end-to-end and prints [PASS]/[FAIL].
  */
@@ -292,6 +297,7 @@ public class FeatureSmokeTest {
         feature("22 Game: Name That (movie/song/game hints)", FeatureSmokeTest::f22NameThat);
         feature("23 Game: Name That dynamic source + fallback", FeatureSmokeTest::f23NameThatDynamic);
         feature("24 Discovery: multicast announcer + scanner", FeatureSmokeTest::f24Discovery);
+        feature("25 Discovery: Tailscale status parse + merged join picker", FeatureSmokeTest::f25DiscoveryTailscale);
 
         System.out.println("\n===== SUMMARY =====");
         System.out.println("PASSED: " + passed + "  FAILED: " + failed);
@@ -1258,6 +1264,57 @@ public class FeatureSmokeTest {
             boolean allUnique = records.stream().map(r -> r.address().getHostAddress() + ":" + r.port())
                     .distinct().count() == records.size();
             check(allUnique, "discovered hosts are de-duplicated by address+port");
+        } finally {
+            ann.close();
+        }
+    }
+
+    // 25 -----------------------------------------------------------------
+
+    private static void f25DiscoveryTailscale() throws Exception {
+        String json = "{"
+                + "\"BackendState\":\"Running\","
+                + "\"Self\":{\"DNSName\":\"air.local.tail-d1234.ts.net.\",\"HostName\":\"air\","
+                + "\"TailscaleIPs\":[\"100.101.102.103\",\"fd7a:115c::103\"],\"Online\":true},"
+                + "\"Peer\":{"
+                + "\"p1\":{\"DNSName\":\"desk.tail-d1234.ts.net.\",\"HostName\":\"desk\","
+                + "\"TailscaleIPs\":[\"100.64.0.5\"],\"Online\":true},"
+                + "\"p2\":{\"DNSName\":\"phone.tail-d1234.ts.net.\",\"HostName\":\"phone\","
+                + "\"TailscaleIPs\":[\"100.64.0.6\"],\"Online\":false},"
+                + "\"p3\":{\"DNSName\":\"gaming.tail-d1234.ts.net.\",\"HostName\":\"gaming\","
+                + "\"TailscaleIPs\":[\"100.64.0.7\"],\"Online\":true}}}";
+        TailscaleStatus.Status st = TailscaleStatus.fromJson(json);
+        check(st.self() != null && st.self().dnsName().equals("air.local.tail-d1234.ts.net"),
+                "Self MagicDNS parsed with trailing dot stripped");
+        check(st.peers().size() == 2, "online peers kept, offline filtered (got " + st.peers().size() + ")");
+        check(st.peers().stream().allMatch(p -> p.ipv4() != null && !p.ipv4().isEmpty()),
+                "kept peers carry a tailnet IPv4");
+        check(TailscaleStatus.fromJson("not json").self() == null, "garbage status yields NONE gracefully");
+
+        DiscoveryRecord lan = new DiscoveryRecord("lan-host", "LL-0001",
+                InetAddress.getByName("192.168.1.50"), 9000);
+        List<JoinPicker.Option> opts = JoinPicker.options(List.of(lan), st.peers(), 8080);
+        check(opts.size() == 3, "LAN + tailnet hosts merged into one picker");
+        check(opts.get(0).label().startsWith("[LAN] "), "LAN option tagged");
+        check(opts.get(1).label().startsWith("[Tailscale] "), "tailnet option tagged");
+        check(opts.stream().anyMatch(o -> o.port() == 9000), "LAN keeps its advertised chat port");
+        check(opts.stream().anyMatch(o -> "100.64.0.5".equals(o.host())), "tailnet connects via tailnet IPv4");
+
+        List<NetworkInterface> nets = DiscoveryNetworks.candidates("");
+        if (nets.isEmpty()) {
+            System.out.println("  [NOTE] no multicast-capable interface found on this host");
+        } else {
+            check(true, "multicast-capable interfaces enumerated (" + nets.size() + ")");
+        }
+
+        // The announcer tolerates a forced (possibly absent) interface and reports status.
+        String forced = nets.isEmpty() ? "en0" : nets.get(0).getName();
+        DiscoveryAnnouncer ann = new DiscoveryAnnouncer("smoke2", "AAAB-BBBB", 7249,
+                48332, 250, forced, m -> System.out.println("  [announcer] " + m));
+        ann.start();
+        try {
+            Thread.sleep(200);
+            check(true, "announcer started against '" + forced + "' without error");
         } finally {
             ann.close();
         }

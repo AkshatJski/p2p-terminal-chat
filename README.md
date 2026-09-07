@@ -67,7 +67,7 @@ chain of peers with **no internet at all**.
 
 | | |
 |---|---|
-| 🔍 **Zero-config LAN discovery** | Hosts broadcast their presence over UDP multicast (`239.255.77.7:8082`); joiners press Enter at the prompt to scan and pick a host by number — no IP hunting. Disable with `discovery.enabled=false`. |
+| 🔍 **Zero-config LAN + tailnet discovery** | Hosts broadcast their presence over UDP multicast (`239.255.77.7:8082`); joiners press Enter to scan the LAN and — if Tailscale is running — pick from tailnet peers already running the app (with exact `JOIN` lines and MagicDNS names shown by the host). Disable with `discovery.enabled=false` / `discovery.tailscale.enabled=false`. |
 | 🔒 **End-to-end encrypted** | X25519 key exchange, AES-256-GCM per message, HKDF-SHA256 key derivation — all from the JDK standard library, zero third-party crypto. |
 | 👥 **Group rooms** | A host relays messages to every member. `@join`, `@list`, `@users`. |
 | 🌍 **Bridge rooms across networks** | `@link <host> [port]` merges two hosts' rooms into one shared room. |
@@ -136,7 +136,7 @@ docker run -it p2p-chat
 git clone https://github.com/AkshatJski/p2p-terminal-chat.git
 cd p2p-terminal-chat
 ./mvnw package -q -DskipTests          # Windows: mvnw.cmd package -q -DskipTests
-java -jar target/java-p2p-terminal-chat-1.1.0.jar
+java -jar target/java-p2p-terminal-chat-1.2.0.jar
 ```
 
 ### Option D — One-command setup script
@@ -202,8 +202,11 @@ Host (or Enter to scan):
 [System] Joining Alice at 192.168.1.42:8080 ...
 ```
 
-If scanning finds nothing (firewall, AP isolation, different VLAN), just type
-Alice's IP — or `192.168.1.42:9090` if she runs a custom port.
+If scanning finds nothing, the app explains why: multicast is typically
+blocked by AP client isolation, a firewall, or a VM-only interface — it will
+tell you when that looks like the issue. Just type Alice's IP — or
+`192.168.1.42:9090` if she runs a custom port. If both machines run Tailscale,
+pressing Enter also lists her tailnet hosts automatically.
 
 **Step 3 — Verify each other's fingerprint**
 
@@ -245,16 +248,34 @@ Install Tailscale on both machines and run `tailscale up` on each:
 winget install tailscale.tailscale
 
 # macOS
-brew install tailscale
+brew install --cask tailscale
 ```
 
-Then join using the host's Tailscale IP (`tailscale ip -4`), **or** its MagicDNS
-name (`<hostname>.<tailnet>.ts.net`) — the app tells you when it detects a
-Tailscale interface. No port forwarding, no firewall holes.
+The host prints ready-to-copy **JOIN lines** for a Tailscale IP and its MagicDNS
+name:
+
+```
+[System] Others can join you at:
+  JOIN 100.101.102.103:8080  (Tailscale IP — reachable from any tailnet device)  [utun]
+  JOIN air.local.tail-d1234.ts.net:8080  (MagicDNS — works from any tailnet device)
+```
+
+Re-print them anytime with **`@net`**. And when you're *joining*, just press
+**Enter** at the host prompt — the app reads `tailscale status --json`, checks
+which online tailnet peers are actually running the chat app, and lists them
+right next to your LAN hosts:
+
+```
+  [1] [LAN] Alice  (74EF3635-02D500FE)  192.168.1.42:8080
+  [2] [Tailscale] air.local.tail-d1234.ts.net  (100.101.102.103)
+```
+
+Tailscale peers connect over the tailnet (port **8080** unless hosts run a custom
+one) — no port forwarding, no firewall holes needed.
 
 > Note: LAN discovery uses multicast, which Tailscale does **not** relay across
-> your tailnet. Over Tailscale, join by IP hostname as above instead of
-> pressing Enter to scan.
+> your tailnet. Discovery over Tailscale uses the tailnet peer list above, not
+> the LAN beacon.
 
 ### Port forwarding
 
@@ -361,12 +382,12 @@ behavior, hint sources, trust server, …): **[CONFIGURATION.md](CONFIGURATION.m
 ```
 
 This produces a single shaded jar at
-`target/java-p2p-terminal-chat-1.1.0.jar`.
+`target/java-p2p-terminal-chat-1.2.0.jar`.
 
 ### Run from source
 
 ```bash
-./mvnw package -q -DskipTests && java -jar target/java-p2p-terminal-chat-1.1.0.jar
+./mvnw package -q -DskipTests && java -jar target/java-p2p-terminal-chat-1.2.0.jar
 ```
 
 ### Tests
@@ -382,8 +403,8 @@ relay, files + progress + cancel, trust, history, moderation, auto-reconnect,
 bridging, mesh flooding, all four games, dynamic hints + fallback):
 
 ```bash
-javac -cp target/java-p2p-terminal-chat-1.1.0.jar -d tool-out tool/FeatureSmokeTest.java
-java  -cp "tool-out;target/java-p2p-terminal-chat-1.1.0.jar" FeatureSmokeTest
+javac -cp target/java-p2p-terminal-chat-1.2.0.jar -d tool-out tool/FeatureSmokeTest.java
+java  -cp "tool-out;target/java-p2p-terminal-chat-1.2.0.jar" FeatureSmokeTest
 ```
 
 Exit code `0` means everything passed.
@@ -460,10 +481,12 @@ Over the internet, use Tailscale or port forwarding (see
 
 **Pressing Enter to scan finds no hosts.**
 Multicast isn't forwarded between VLANs, by access-point client isolation, or
-by some firewalls. Join by typing the host's IP instead (it still works), or
-on Windows allow Java through the firewall for your network type. Both sides
-must use the same `discovery.port` (default `8082`) and the same `port` for the
-chat itself.
+by some firewalls — the app now tells you when that is likely the cause. Join
+by typing the host's IP instead (it still works), or on Windows allow Java
+through the firewall for your network type. Both sides must use the same
+`discovery.port` (default `8082`) and the same `port` for the chat itself. On
+macOS, if a virtual interface (Tailscale/utun) is stealing multicast, pin the
+LAN interface with `discovery.interface=en0` in the config file.
 
 **The fingerprint changed and the app won't connect.**
 The host's identity key or `trusted.txt` was replaced/deleted. Confirm with the

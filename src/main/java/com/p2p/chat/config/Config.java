@@ -47,6 +47,9 @@ public final class Config {
     public static final String KEY_DISCOVERY_PORT = "discovery.port";
     public static final String KEY_DISCOVERY_INTERVAL_MS = "discovery.interval.ms";
     public static final String KEY_DISCOVERY_SCAN_MS = "discovery.scan.ms";
+    public static final String KEY_DISCOVERY_INTERFACE = "discovery.interface";
+    public static final String KEY_DISCOVERY_TAILSCALE_ENABLED = "discovery.tailscale.enabled";
+    public static final String KEY_DISCOVERY_TAILSCALE_BIN = "discovery.tailscale.bin";
 
     // Built-in defaults.
     public static final int DEFAULT_PORT = 8080;
@@ -66,6 +69,9 @@ public final class Config {
     public static final int DEFAULT_DISCOVERY_PORT = 8082;
     public static final long DEFAULT_DISCOVERY_INTERVAL_MS = 2_000;
     public static final long DEFAULT_DISCOVERY_SCAN_MS = 3_000;
+    public static final String DEFAULT_DISCOVERY_INTERFACE = "";
+    public static final boolean DEFAULT_DISCOVERY_TAILSCALE_ENABLED = true;
+    public static final String DEFAULT_DISCOVERY_TAILSCALE_BIN = "";
 
     public static final Path DEFAULT_DIR = Path.of(System.getProperty("user.home"), ".p2p-chat");
     public static final Path DEFAULT_CONFIG_FILE = DEFAULT_DIR.resolve("config.properties");
@@ -279,6 +285,27 @@ public final class Config {
     /** How long a joiner listens for beacons before giving up, in milliseconds. */
     public long getDiscoveryScanMs() {
         return getLong(KEY_DISCOVERY_SCAN_MS, DEFAULT_DISCOVERY_SCAN_MS);
+    }
+
+    /**
+     * Optional network interface to force for beacons and scans (an interface
+     * name such as {@code en0}, or its display name like {@code Wi-Fi}). Empty
+     * means "pick the best interface automatically".
+     */
+    public String getDiscoveryInterface() {
+        String v = props.getProperty(KEY_DISCOVERY_INTERFACE);
+        return v == null ? DEFAULT_DISCOVERY_INTERFACE : v.trim();
+    }
+
+    /** Whether the join prompt also lists online hosts from the Tailscale tailnet. */
+    public boolean isTailscaleDiscoveryEnabled() {
+        return getBool(KEY_DISCOVERY_TAILSCALE_ENABLED, DEFAULT_DISCOVERY_TAILSCALE_ENABLED);
+    }
+
+    /** Optional path to the {@code tailscale} CLI. Empty = auto-detect. */
+    public String getTailscaleBin() {
+        String v = props.getProperty(KEY_DISCOVERY_TAILSCALE_BIN);
+        return v == null ? DEFAULT_DISCOVERY_TAILSCALE_BIN : v.trim();
     }
 
     /** The config file that was used, or the default path when none existed. */
