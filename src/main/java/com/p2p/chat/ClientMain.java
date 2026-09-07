@@ -23,6 +23,7 @@ import java.net.InetSocketAddress;
 import java.net.NetworkInterface;
 import java.net.Socket;
 import java.net.SocketException;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
@@ -39,6 +40,9 @@ import java.util.concurrent.Executors;
  * for all options and the defaults.
  */
 public class ClientMain {
+    /** Bounded initial connect so a quiet/unreachable host errors out instead of hanging. */
+    private static final int CONNECT_TIMEOUT_MS = 6_000;
+
     public static void main(String[] args) {
         Ansi.detectAndEnable();
         Scanner in = new Scanner(System.in);
@@ -72,12 +76,24 @@ public class ClientMain {
                 printLocalAddresses(config, deviceId);
                 startHostDiscovery(config, name, deviceId);
             } else if (choice.startsWith("J")) {
-                String[] target = askJoinTarget(in, config);
-                if (target == null) {
-                    return;
+                while (true) {
+                    String[] target = askJoinTarget(in, config);
+                    if (target == null) {
+                        return;
+                    }
+                    try {
+                        node = new ClientNode(name, target[0], Integer.parseInt(target[1]),
+                                identity, trustGate, prompt, CONNECT_TIMEOUT_MS);
+                        node.start();
+                        break;
+                    } catch (IOException e) {
+                        System.err.println(Ansi.color(Ansi.RED, "[Error] Could not connect to " + target[0]
+                                + ":" + target[1] + " — " + friendlyConnectError(e)));
+                        System.out.println(Ansi.color(Ansi.DIM,
+                                "       Check the host is running and reachable, then try again (or a different host)."));
+                        node = null;
+                    }
                 }
-                node = new ClientNode(name, target[0], Integer.parseInt(target[1]), identity, trustGate, prompt);
-                node.start();
             } else {
                 System.out.println(Ansi.color(Ansi.RED, "[System] Invalid choice. Run again and pick H or J."));
                 return;
@@ -361,5 +377,19 @@ public class ClientMain {
             }
         }
         return new String[]{input, String.valueOf(defaultPort)};
+    }
+
+    /** Human-friendly reason for a failed connect, tailored to the exception type. */
+    private static String friendlyConnectError(IOException e) {
+        if (e instanceof java.net.UnknownHostException) {
+            return "no such host \"" + e.getMessage() + "\"";
+        }
+        if (e instanceof java.net.SocketTimeoutException) {
+            return "connect timed out (host unreachable or not responding)";
+        }
+        if (e instanceof java.net.ConnectException) {
+            return e.getMessage() != null ? e.getMessage() + " (is the host running?)" : "connection failed";
+        }
+        return e.getMessage() != null ? e.getMessage() : "connection failed";
     }
 }

@@ -7,6 +7,7 @@ import com.p2p.chat.crypto.TrustStore;
 import com.p2p.chat.protocol.Protocol;
 import com.p2p.chat.util.Ansi;
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -36,7 +37,19 @@ public final class ClientNode extends Node {
 
     public ClientNode(String username, String host, int port,
                       Identity identity, TrustGate trustGate, Prompt prompt) throws IOException {
-        super(new SecureChannel(new Socket(host, port), identity), username);
+        this(username, host, port, identity, trustGate, prompt, 0);
+    }
+
+    /**
+     * Same as the 5-arg constructor, but the initial connect is bounded by
+     * {@code connectTimeoutMs} instead of relying on the OS TCP socket timeout,
+     * so an unreachable (quiet) address surfaces an error instead of hanging.
+     * A timeout of {@code 0} keeps the previous unbounded behavior.
+     */
+    public ClientNode(String username, String host, int port,
+                      Identity identity, TrustGate trustGate, Prompt prompt,
+                      int connectTimeoutMs) throws IOException {
+        super(new SecureChannel(connectSocket(host, port, connectTimeoutMs), identity), username);
         this.host = host;
         this.port = port;
         this.trustGate = trustGate;
@@ -47,6 +60,15 @@ public final class ClientNode extends Node {
         this.reconnector.setMaxRetries(config.getReconnectMaxRetries());
         this.reconnector.setBaseDelayMs(config.getReconnectBaseDelayMs());
         this.reconnector.setMaxDelayMs(config.getReconnectMaxDelayMs());
+    }
+
+    private static Socket connectSocket(String host, int port, int timeoutMs) throws IOException {
+        if (timeoutMs <= 0) {
+            return new Socket(host, port);
+        }
+        Socket socket = new Socket();
+        socket.connect(new InetSocketAddress(host, port), timeoutMs);
+        return socket;
     }
 
     public void start() {
